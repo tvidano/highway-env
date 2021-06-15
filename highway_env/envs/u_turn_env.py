@@ -208,7 +208,7 @@ class UTurnEnv(AbstractEnv):
         self.road.vehicles.append(vehicle)
 
 
-register(
-    id='u-turn-v0',
-    entry_point='highway_env.envs:UTurnEnv'
+utils.register_id_once(
+    'u-turn-v0',
+    'highway_env.envs:UTurnEnv'
 )

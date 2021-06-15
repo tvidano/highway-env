@@ -107,7 +107,4 @@ class HighwayEnv(AbstractEnv):
         return float(self.vehicle.crashed)
 
 
-register(
-    id='highway-v0',
-    entry_point='highway_env.envs:HighwayEnv',
-)
+utils.register_id_once('highway-v0','highway_env.envs:HighwayEnv')

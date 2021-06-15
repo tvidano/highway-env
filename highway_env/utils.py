@@ -1,3 +1,4 @@
+import gym
 import copy
 import importlib
 import itertools
@@ -312,3 +313,14 @@ def solve_trinom(a, b, c):
         return (-b - np.sqrt(delta)) / (2 * a), (-b + np.sqrt(delta)) / (2 * a)
     else:
         return None, None
+
+def register_id_once(env_name,entry,kwargs=None):
+    if kwargs is None:
+        kwargs = {}
+    env_list = gym.envs.registration.registry.env_specs.copy().keys()
+    if env_name not in env_list:
+        gym.envs.registration.registry.register(
+            id=env_name,
+            entry_point=entry,
+            **kwargs
+        )

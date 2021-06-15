@@ -268,17 +268,17 @@ class MultiAgentIntersectionEnv(IntersectionEnv):
 TupleMultiAgentIntersectionEnv = MultiAgentWrapper(MultiAgentIntersectionEnv)
 
 
-register(
-    id='intersection-v0',
-    entry_point='highway_env.envs:IntersectionEnv',
+utils.register_id_once(
+    'intersection-v0',
+    'highway_env.envs:IntersectionEnv'
 )
 
-register(
-    id='intersection-multi-agent-v0',
-    entry_point='highway_env.envs:MultiAgentIntersectionEnv',
+utils.register_id_once(
+    'intersection-multi-agent-v0',
+    'highway_env.envs:MultiAgentIntersectionEnv'
 )
 
-register(
-    id='intersection-multi-agent-v1',
-    entry_point='highway_env.envs:TupleMultiAgentIntersectionEnv',
+utils.register_id_once(
+    'intersection-multi-agent-v1',
+    'highway_env.envs:TupleMultiAgentIntersectionEnv'
 )

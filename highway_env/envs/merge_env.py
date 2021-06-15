@@ -124,7 +124,4 @@ class MergeEnv(AbstractEnv):
         self.vehicle = ego_vehicle
 
 
-register(
-    id='merge-v0',
-    entry_point='highway_env.envs:MergeEnv',
-)
+utils.register_id_once('merge-v0', 'highway_env.envs:MergeEnv')

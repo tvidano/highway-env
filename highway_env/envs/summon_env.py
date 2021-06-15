@@ -121,14 +121,13 @@ class SummonEnvActionRepeat(SummonEnv):
         self.configure({"policy_frequency": 1})
 
 
-register(
-    id='summon-v0',
-    entry_point='highway_env.envs:SummonEnv',
-    max_episode_steps=100
+utils.register_id_once(
+    'summon-v0',
+    'highway_env.envs:SummonEnv',
+    {'max_episode_steps':100}
 )
-
-register(
-    id='summon-ActionRepeat-v0',
-    entry_point='highway_env.envs:SummonEnvActionRepeat',
-    max_episode_steps=20
+utils.register_id_once(
+    'summon-ActionRepeat-v0',
+    'highway_env.envs:ParkingEnvActionRepeat',
+    {'max_episode_steps':20}
 )

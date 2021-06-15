@@ -182,7 +182,4 @@ class RoundaboutEnv(AbstractEnv):
         self.road.vehicles.append(vehicle)
 
 
-register(
-    id='roundabout-v0',
-    entry_point='highway_env.envs:RoundaboutEnv',
-)
+utils.register_id_once('roundabout-v0','highway_env.envs:RoundaboutEnv')

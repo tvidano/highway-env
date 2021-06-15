@@ -144,7 +144,7 @@ class ExitEnv(HighwayEnv):
 
 
 
-register(
-    id='exit-v0',
-    entry_point='highway_env.envs:ExitEnv',
+utils.register_id_once(
+    'exit-v0',
+    'highway_env.envs:ExitEnv'
 )

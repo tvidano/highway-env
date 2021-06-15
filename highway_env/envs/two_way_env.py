@@ -115,8 +115,8 @@ class TwoWayEnv(AbstractEnv):
             self.road.vehicles.append(v)
 
 
-register(
-    id='two-way-v0',
-    entry_point='highway_env.envs:TwoWayEnv',
-    max_episode_steps=15
+utils.register_id_once(
+    'two-way-v0',
+    'highway_env.envs:TwoWayEnv',
+    {'max_episode_steps':15}
 )
