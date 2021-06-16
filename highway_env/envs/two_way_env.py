@@ -62,7 +62,7 @@ class TwoWayEnv(AbstractEnv):
         self._make_road()
         self._make_vehicles()
 
-    def _make_road(self, length=800):
+    def _make_road(self, length=10000):
         """
         Make a road composed of a two-way road.
 
@@ -90,7 +90,7 @@ class TwoWayEnv(AbstractEnv):
         road = self.road
         ego_vehicle = self.action_type.vehicle_class(road,
                                                      road.network.get_lane(("a", "b", 1)).position(30, 0),
-                                                     speed=30)
+                                                     speed=20)
         road.vehicles.append(ego_vehicle)
         self.vehicle = ego_vehicle
 
