@@ -324,3 +324,10 @@ def register_id_once(env_name,entry,kwargs=None):
             entry_point=entry,
             **kwargs
         )
+
+def relative_velocity(vehicle1, vehicle2):
+    projUonV = lambda u,v: (np.dot(u,v)/np.linalg.norm(v)**2)*v
+    relative_position = vehicle2.position - vehicle1.position
+    vehicle2_velocity = projUonV(vehicle2.velocity,relative_position)
+    vehicle1_velocity = projUonV(vehicle1.velocity,relative_position)
+    return vehicle2_velocity - vehicle1_velocity
