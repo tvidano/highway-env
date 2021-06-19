@@ -49,12 +49,12 @@ if __name__ == "__main__":
             "type": "ContinuousAction", # DiscreteMetaAction
             "dynamical": False # there is something really wrong with their dynamics
         },
-        "simulation_frequency": 50,  # [Hz]
-        "policy_frequency": 10,  # [Hz]
+        "simulation_frequency": 40,  # [Hz]
+        "policy_frequency": 20,  # [Hz]
         "offroad_terminal": True,
-        "lanes_count": 2,
+        "lanes_count": 3,
         "vehicles_density": 1.5,
-        "vehicles_count": 30,
+        "vehicles_count": 40,
         "controlled_vehicles": 1,
         "screen_width": 900,  # [px]
         "screen_height": 150,  # [px]
@@ -63,13 +63,17 @@ if __name__ == "__main__":
         "duration": 20,  # [s]
     })
     env.reset()
-    
+    rewards = []
     for t in range(500):
         env.render()
         #action = env.action_space.sample()
         action = np.array([-1, 0])
         obs, rew, done, info = env.step(action)
+        rewards.append(rew)
         if done:
             print(f'Finished after {t+1} steps.')
             break
     env.close()
+    
+    plt.plot(rewards)
+    plt.show()

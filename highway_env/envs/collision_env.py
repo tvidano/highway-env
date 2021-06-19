@@ -1,3 +1,4 @@
+from os import replace
 import warnings
 from typing import List, Tuple, Optional, Callable
 import numpy as np
@@ -11,7 +12,7 @@ from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
 
 Observation = np.ndarray
-
+# TODO{tvidano}: add tire models to bicycle car or fix dynamics model
 class CollisionEnv(HighwayEnv):
     """
     A highway driving environment with high probability of collisions.
@@ -33,6 +34,7 @@ class CollisionEnv(HighwayEnv):
                 "type": "ContinuousAction",
                 "dynamical": True
             },
+            "initial_ego_speed": 30,
             "simulation_frequency": 50,  # [Hz]
             "policy_frequency": 10,  # [Hz]
             "lanes_count": 3,
@@ -43,7 +45,7 @@ class CollisionEnv(HighwayEnv):
             "ego_spacing": 2,
             "vehicles_density": 2,
             "collision_avoided_reward": 1,
-            "collision_imminent_reward": 1/(20*10),
+            "collision_imminent_reward": .05,
             "collision_max_reward": 0.8,
             "collision_sensitivity": 1/40,
             "time_after_collision": 5, # [s]
@@ -52,6 +54,37 @@ class CollisionEnv(HighwayEnv):
             "intervention_distance": 10 # [m]
         })
         return config
+
+    def _create_vehicles(self) -> None:
+        """Create some new random vehicles of a given type, and add them on the road."""
+        other_vehicles_type = utils.class_from_path(self.config["other_vehicles_type"])
+        other_per_controlled = near_split(self.config["vehicles_count"], num_bins=self.config["controlled_vehicles"])
+
+        self.controlled_vehicles = []
+        for others in other_per_controlled:
+            controlled_vehicle = self.action_type.vehicle_class.create_random(
+                self.road,
+                speed=self.config["initial_ego_speed"],
+                lane_id=self.config["initial_lane_id"],
+                spacing=self.config["ego_spacing"]
+            )
+            self.controlled_vehicles.append(controlled_vehicle)
+            self.road.vehicles.append(controlled_vehicle)
+
+            other_vehicles = []
+            for _ in range(others):
+                other_vehicle = other_vehicles_type.create_random(self.road, \
+                    spacing = 1 / (self.config["vehicles_density"] * 2))
+                self.road.vehicles.append(other_vehicle)
+                other_vehicles.append(other_vehicle)
+
+            ego_pos_x = controlled_vehicle.position[0]
+            select_vehicles = self.road.np_random.choice(other_vehicles, \
+                len(other_vehicles) // 2, replace=False)
+            for select_vehicle in select_vehicles:
+                dist_from_ego = select_vehicle.position[0] - ego_pos_x
+                select_vehicle.position[0] = ego_pos_x - dist_from_ego
+            
 
     def step(self, action: Action) -> Tuple[Observation, float, bool, dict]:
         """
@@ -99,8 +132,8 @@ class CollisionEnv(HighwayEnv):
     def _imminent_collision(self) -> bool:
         """Determines if a collision is about to happen."""
         front_vehicle,_ = self.road.neighbour_vehicles(self.vehicle, self.vehicle.lane_index)
-        return False if self.vehicle.lane_distance_to(front_vehicle) \
-                > self.config["intervention_distance"] else True
+        follow_distance = self.vehicle.lane_distance_to(front_vehicle) if front_vehicle else np.inf
+        return False if follow_distance > self.config["intervention_distance"] else True
 
     def _reward(self, action: Action) -> float:
         """
@@ -109,7 +142,7 @@ class CollisionEnv(HighwayEnv):
         :param action: the last action performed
         :return: the corresponding reward
         """
-        duration_reached = self.steps >= self.config["duration"]
+        duration_reached = self.time >= self.config["duration"]
 
         if duration_reached and self.vehicle.crashed:
             reward = 0
@@ -120,15 +153,17 @@ class CollisionEnv(HighwayEnv):
         elif not duration_reached and not self.vehicle.crashed:
             reward = 0
         elif not duration_reached and self.vehicle.crashed:
-            relative_velocity = 0
+            damage = 0
             for collisions in self.vehicle.log:
-                relative_velocity += collisions[1]
-            damage = relative_velocity/self.vehicle.MAX_SPEED
-            reward = -self.config["collision_sensitivity"]*damage \
+                damage += collisions[1]
+            reward = -self.config["collision_max_reward"]*damage/self.config["initial_ego_speed"] \
                     + self.config["collision_max_reward"]
+            reward = reward if reward < self.config["collision_max_reward"]\
+                    else self.config["collision_max_reward"]
+            reward = 0 if reward < 0 else reward
         else:
             warnings.warn("Something went wrong.")
-            reward = -1
+            reward = 0
         reward = 0 if not self.vehicle.on_road else reward
         return reward
 
