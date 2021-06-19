@@ -28,6 +28,7 @@ class HighwayEnv(AbstractEnv):
             "action": {
                 "type": "DiscreteMetaAction",
             },
+            "initial_ego_speed": 25,
             "lanes_count": 4,
             "vehicles_count": 50,
             "controlled_vehicles": 1,
@@ -66,7 +67,7 @@ class HighwayEnv(AbstractEnv):
         for others in other_per_controlled:
             controlled_vehicle = self.action_type.vehicle_class.create_random(
                 self.road,
-                speed=25,
+                speed=self.config["initial_ego_speed"],
                 lane_id=self.config["initial_lane_id"],
                 spacing=self.config["ego_spacing"]
             )
