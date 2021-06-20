@@ -12,7 +12,7 @@ from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
 
 Observation = np.ndarray
-# TODO{tvidano}: add tire models to bicycle car or fix dynamics model
+# TODO{tvidano}: fix stopping distance of ego_vehicle and other vehicles
 class CollisionEnv(HighwayEnv):
     """
     A highway driving environment with high probability of collisions.
@@ -28,13 +28,25 @@ class CollisionEnv(HighwayEnv):
         config = super().default_config()
         config.update({
             "observation": {
-                "type": "Kinematics"
+                "type": "Kinematics",
+                "vehicles_count": 5,
+                "features": ["presence", "x", "y", "vx", "vy"],
+                "features_range": {
+                    "x": [-100, 100],
+                    "y": [-100, 100],
+                    "vx": [-45, 45],
+                    "vy": [-20, 20]
+                },
+                "absolute": False,
+                "order": "sorted",
+                "flatten": False,
+                "observe_intentions": False,
             },
             "action": {
                 "type": "ContinuousAction",
                 "dynamical": True
             },
-            "initial_ego_speed": 30,
+            "initial_ego_speed": 20,
             "simulation_frequency": 50,  # [Hz]
             "policy_frequency": 10,  # [Hz]
             "lanes_count": 3,
@@ -45,13 +57,13 @@ class CollisionEnv(HighwayEnv):
             "ego_spacing": 2,
             "vehicles_density": 2,
             "collision_avoided_reward": 1,
-            "collision_imminent_reward": .05,
-            "collision_max_reward": 0.8,
+            "collision_imminent_reward": .00,
+            "collision_max_reward": 0.3,
             "collision_sensitivity": 1/40,
-            "time_after_collision": 5, # [s]
+            "time_after_collision": 3, # [s]
             "offroad_terminal": True,
             "stopping_vehicles_count": 2,
-            "intervention_distance": 10 # [m]
+            "intervention_distance": 15 # [m]
         })
         return config
 
