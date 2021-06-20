@@ -8,6 +8,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from collections import namedtuple
+from stable_baselines3.common.env_checker import check_env
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
 # torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
 # Visualization
@@ -43,36 +46,49 @@ if __name__ == "__main__":
     #env = highway_env.envs.lane_keeping_env.LaneKeepingEnv() # can't get this to work with manual
     #env = highway_env.envs.u_turn_env.UTurnEnv()
     #env = gym.make('highway-v0')
+
     env.configure({
         "manual_control": False,
         "action": {
             "type": "ContinuousAction", # DiscreteMetaAction
-            "dynamical": False # there is something really wrong with their dynamics
+            "dynamical": False
         },
         "simulation_frequency": 40,  # [Hz]
-        "policy_frequency": 20,  # [Hz]
+        "policy_frequency": 10,  # [Hz]
         "offroad_terminal": True,
         "lanes_count": 3,
-        "vehicles_density": 1.5,
-        "vehicles_count": 40,
+        "vehicles_density": 2,
+        "vehicles_count": 15,
         "controlled_vehicles": 1,
         "screen_width": 900,  # [px]
         "screen_height": 150,  # [px]
         "other_vehicles_type": "highway_env.vehicle.behavior.IDMVehicle",
-        "stopping_vehicles_count": 2,
-        "duration": 20,  # [s]
+        "stopping_vehicles_count": 5,
+        "duration": 10,  # [s]
     })
-    env.reset()
+
+    #check_env(env)
+
+    #model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,
+    #            batch_size=64, n_epochs=10,verbose=1)
+    #model.learn(total_timesteps=25000, )
+    #model.save("ppo_collision")
+    #model.load("ppo_collision")
+
+    obs = env.reset()
+    model_params = []
     rewards = []
-    for t in range(500):
-        env.render()
+    done = False
+    while not done:
         #action = env.action_space.sample()
         action = np.array([-1, 0])
+        #action, _states = model.predict(obs)
         obs, rew, done, info = env.step(action)
         rewards.append(rew)
-        if done:
-            print(f'Finished after {t+1} steps.')
-            break
+        #if done:
+        #    print(f'Finished after {t+1} steps.')
+        #    break
+        env.render()
     env.close()
     
     plt.plot(rewards)
