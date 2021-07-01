@@ -40,6 +40,7 @@ class Vehicle(RoadObject):
         self.impact = None
         self.log = []
         self.history = deque(maxlen=30)
+        self.beta = 0
 
     @classmethod
     def make_on_lane(cls, road: Road, lane_index: LaneIndex, longitudinal: float, speed: float = 0) -> "Vehicle":
@@ -130,15 +131,15 @@ class Vehicle(RoadObject):
         """
         self.clip_actions()
         delta_f = self.action['steering']
-        beta = np.arctan(1 / 2 * np.tan(delta_f))
-        v = self.speed * np.array([np.cos(self.heading + beta),
-                                   np.sin(self.heading + beta)])
+        self.beta = np.arctan(1 / 2 * np.tan(delta_f))
+        v = self.speed * np.array([np.cos(self.heading + self.beta),
+                                   np.sin(self.heading + self.beta)])
         self.position += v * dt
         if self.impact is not None:
             self.position += self.impact
             self.crashed = True
             self.impact = None
-        self.heading += self.speed * np.sin(beta) / (self.LENGTH / 2) * dt
+        self.heading += self.speed * np.sin(self.beta) / (self.LENGTH / 2) * dt
         self.speed += self.action['acceleration'] * dt
         self.on_state_update()
 
@@ -204,7 +205,7 @@ class Vehicle(RoadObject):
 
     @property
     def velocity(self) -> np.ndarray:
-        return self.speed * self.direction  # TODO: slip angle beta should be used here
+        return self.speed * np.array([np.cos(self.beta),np.sin(self.beta)]) * self.direction
 
     @property
     def destination(self) -> np.ndarray:

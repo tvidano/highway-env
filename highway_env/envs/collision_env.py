@@ -8,7 +8,7 @@ from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.envs.common.action import Action
 from highway_env.envs.highway_env import HighwayEnv
 from highway_env.road.road import Road, RoadNetwork
-from highway_env.utils import near_split
+from highway_env.utils import near_split, relative_velocity
 from highway_env.vehicle.controller import ControlledVehicle
 
 Observation = np.ndarray
@@ -29,7 +29,7 @@ class CollisionEnv(HighwayEnv):
         config.update({
             "observation": {
                 "type": "Kinematics",
-                "vehicles_count": 5,
+                "vehicles_count": 50,
                 "features": ["presence", "x", "y", "vx", "vy"],
                 "features_range": {
                     "x": [-100, 100],
@@ -63,39 +63,41 @@ class CollisionEnv(HighwayEnv):
             "time_after_collision": 3, # [s]
             "offroad_terminal": True,
             "stopping_vehicles_count": 2,
-            "intervention_distance": 15 # [m]
+            "look_ahead_distance": 50, # [m]
+            "time_to_intervene": 1 # [s]
         })
         return config
 
     def _create_vehicles(self) -> None:
         """Create some new random vehicles of a given type, and add them on the road."""
+        if self.config["controlled_vehicles"] > 1:
+            raise ValueError(f'{self.config["controlled_vehicles"]} controlled vehicles set, but CollisionEnv uses only 1.')
+        
         other_vehicles_type = utils.class_from_path(self.config["other_vehicles_type"])
-        other_per_controlled = near_split(self.config["vehicles_count"], num_bins=self.config["controlled_vehicles"])
 
         self.controlled_vehicles = []
-        for others in other_per_controlled:
-            controlled_vehicle = self.action_type.vehicle_class.create_random(
-                self.road,
-                speed=self.config["initial_ego_speed"],
-                lane_id=self.config["initial_lane_id"],
-                spacing=self.config["ego_spacing"]
-            )
-            self.controlled_vehicles.append(controlled_vehicle)
-            self.road.vehicles.append(controlled_vehicle)
+        controlled_vehicle = self.action_type.vehicle_class.create_random(
+            self.road,
+            speed=self.config["initial_ego_speed"],
+            lane_id=self.config["initial_lane_id"],
+            spacing=self.config["ego_spacing"]
+        )
+        self.controlled_vehicles.append(controlled_vehicle)
+        self.road.vehicles.append(controlled_vehicle)
 
-            other_vehicles = []
-            for _ in range(others):
-                other_vehicle = other_vehicles_type.create_random(self.road, \
-                    spacing = 1 / (self.config["vehicles_density"] * 2))
-                self.road.vehicles.append(other_vehicle)
-                other_vehicles.append(other_vehicle)
+        other_vehicles = []
+        for _ in range(self.config["vehicles_count"]):
+            other_vehicle = other_vehicles_type.create_random(self.road, \
+                spacing = 1 / (self.config["vehicles_density"] * 2))
+            self.road.vehicles.append(other_vehicle)
+            other_vehicles.append(other_vehicle)
 
-            ego_pos_x = controlled_vehicle.position[0]
-            select_vehicles = self.road.np_random.choice(other_vehicles, \
-                len(other_vehicles) // 2, replace=False)
-            for select_vehicle in select_vehicles:
-                dist_from_ego = select_vehicle.position[0] - ego_pos_x
-                select_vehicle.position[0] = ego_pos_x - dist_from_ego
+        ego_pos_x = controlled_vehicle.position[0]
+        select_vehicles = self.road.np_random.choice(other_vehicles, \
+            len(other_vehicles) // 2, replace=False)
+        for select_vehicle in select_vehicles:
+            dist_from_ego = select_vehicle.position[0] - ego_pos_x
+            select_vehicle.position[0] = ego_pos_x - dist_from_ego
             
 
     def step(self, action: Action) -> Tuple[Observation, float, bool, dict]:
@@ -144,8 +146,12 @@ class CollisionEnv(HighwayEnv):
     def _imminent_collision(self) -> bool:
         """Determines if a collision is about to happen."""
         front_vehicle,_ = self.road.neighbour_vehicles(self.vehicle, self.vehicle.lane_index)
-        follow_distance = self.vehicle.lane_distance_to(front_vehicle) if front_vehicle else np.inf
-        return False if follow_distance > self.config["intervention_distance"] else True
+        relative_distance = front_vehicle.position[0] - self.vehicle.position[0]
+        if relative_distance > self.config["look_ahead_distance"]:
+            return False
+        relative_x_velocity = front_vehicle.velocity[0] - self.vehicle.velocity[0]
+        time_to_collision = np.inf if relative_x_velocity >= 0 else -relative_distance - self.vehicle.LENGTH/ relative_x_velocity
+        return False if time_to_collision > self.config["time_to_intervene"] else True
 
     def _reward(self, action: Action) -> float:
         """

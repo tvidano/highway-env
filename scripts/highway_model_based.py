@@ -53,18 +53,18 @@ if __name__ == "__main__":
             "type": "ContinuousAction", # DiscreteMetaAction
             "dynamical": False
         },
-        "simulation_frequency": 40,  # [Hz]
+        "simulation_frequency": 15,  # [Hz]
         "policy_frequency": 10,  # [Hz]
         "offroad_terminal": True,
         "lanes_count": 3,
         "vehicles_density": 2,
-        "vehicles_count": 15,
+        "vehicles_count": 25,
         "controlled_vehicles": 1,
         "screen_width": 900,  # [px]
         "screen_height": 150,  # [px]
         "other_vehicles_type": "highway_env.vehicle.behavior.IDMVehicle",
-        "stopping_vehicles_count": 5,
-        "duration": 10,  # [s]
+        "stopping_vehicles_count": 7,
+        "duration": 15,  # [s]
     })
 
     #check_env(env)
@@ -81,7 +81,7 @@ if __name__ == "__main__":
     done = False
     while not done:
         #action = env.action_space.sample()
-        action = np.array([-1, 0])
+        action = np.array([-1000, 0])
         #action, _states = model.predict(obs)
         obs, rew, done, info = env.step(action)
         rewards.append(rew)
@@ -91,5 +91,5 @@ if __name__ == "__main__":
         env.render()
     env.close()
     
-    plt.plot(rewards)
-    plt.show()
+    #plt.plot(rewards)
+    #plt.show()

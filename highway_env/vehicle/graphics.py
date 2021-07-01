@@ -9,7 +9,8 @@ from highway_env.vehicle.dynamics import BicycleVehicle
 from highway_env.vehicle.kinematics import Vehicle
 from highway_env.vehicle.controller import ControlledVehicle, MDPVehicle
 from highway_env.vehicle.behavior import IDMVehicle, LinearVehicle
-
+#from highway_env.envs.collision_env import CollisionEnv
+# TODO{tvidano}: make ego vehicle change color in CollisionEnv when intervention is active
 if TYPE_CHECKING:
     from highway_env.road.graphics import WorldSurface
 
@@ -21,6 +22,7 @@ class VehicleGraphics(object):
     YELLOW = (200, 200, 0)
     BLACK = (60, 60, 60)
     PURPLE = (200, 0, 150)
+    ORANGE = (255, 150, 0)
     DEFAULT_COLOR = YELLOW
     EGO_COLOR = GREEN
 
