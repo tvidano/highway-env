@@ -1,3 +1,4 @@
+from highway_env.vehicle.dynamics import CoupledDynamics
 from os import replace
 import warnings
 from typing import List, Tuple, Optional, Callable
@@ -12,7 +13,6 @@ from highway_env.utils import near_split, relative_velocity
 from highway_env.vehicle.controller import ControlledVehicle
 
 Observation = np.ndarray
-# TODO{tvidano}: fix stopping distance of ego_vehicle and other vehicles
 class CollisionEnv(HighwayEnv):
     """
     A highway driving environment with high probability of collisions.
@@ -44,7 +44,8 @@ class CollisionEnv(HighwayEnv):
             },
             "action": {
                 "type": "ContinuousAction",
-                "dynamical": True
+                #"dynamical": True
+                "vehicle_class": CoupledDynamics
             },
             "initial_ego_speed": 20,
             "simulation_frequency": 50,  # [Hz]
@@ -116,7 +117,7 @@ class CollisionEnv(HighwayEnv):
         if self.road is None or self.vehicle is None:
             raise NotImplementedError("The road and vehicle must be initialized in the environment implementation")
 
-        if not self._imminent_collision():
+        if self._imminent_collision():
             action = np.array([0,0])
         self.steps += 1
         self._simulate(action)
@@ -146,7 +147,7 @@ class CollisionEnv(HighwayEnv):
     def _imminent_collision(self) -> bool:
         """Determines if a collision is about to happen."""
         front_vehicle,_ = self.road.neighbour_vehicles(self.vehicle, self.vehicle.lane_index)
-        relative_distance = front_vehicle.position[0] - self.vehicle.position[0]
+        relative_distance = front_vehicle.position[0] - self.vehicle.position[0] if front_vehicle else np.inf
         if relative_distance > self.config["look_ahead_distance"]:
             return False
         relative_x_velocity = front_vehicle.velocity[0] - self.vehicle.velocity[0]
@@ -198,5 +199,21 @@ class CollisionEnv(HighwayEnv):
         return self.vehicle.crashed or \
             self.time >= self.config["duration"] or \
             (self.config["offroad_terminal"] and not self.vehicle.on_road)
+
+    def _info(self, obs: Observation, action: Action) -> dict:
+        """
+        Return a dictionary of additional information
+
+        :param obs: current observation
+        :param action: current action
+        :return: info dict
+        """
+        info = {
+            "speed": (self.vehicle.longitudinal_velocity, self.vehicle.lateral_velocity),
+            "tire_forces": (self.vehicle.front_tire.get_forces(), self.vehicle.front_tire.get_forces()),
+            "crashed": self.vehicle.crashed,
+            "action": action,
+        }
+        return info
 
 utils.register_id_once('collision-v0','collision_env.envs:CollisionEnv')

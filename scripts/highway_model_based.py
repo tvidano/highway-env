@@ -48,23 +48,23 @@ if __name__ == "__main__":
     #env = gym.make('highway-v0')
 
     env.configure({
-        "manual_control": False,
-        "action": {
-            "type": "ContinuousAction", # DiscreteMetaAction
-            "dynamical": False
-        },
+        "manual_control": True,
+        # "action": {
+        #     "type": "ContinuousAction", # DiscreteMetaAction
+        #     "dynamical": False
+        # },
         "simulation_frequency": 15,  # [Hz]
         "policy_frequency": 10,  # [Hz]
-        "offroad_terminal": True,
+        "offroad_terminal": False,
         "lanes_count": 3,
         "vehicles_density": 2,
-        "vehicles_count": 25,
+        "vehicles_count": 0,
         "controlled_vehicles": 1,
         "screen_width": 900,  # [px]
         "screen_height": 150,  # [px]
         "other_vehicles_type": "highway_env.vehicle.behavior.IDMVehicle",
-        "stopping_vehicles_count": 7,
-        "duration": 15,  # [s]
+        "stopping_vehicles_count": 0,
+        "duration": 30,  # [s]
     })
 
     #check_env(env)
@@ -78,12 +78,16 @@ if __name__ == "__main__":
     obs = env.reset()
     model_params = []
     rewards = []
+    velocity = []
+    lat_vel = []
     done = False
     while not done:
         #action = env.action_space.sample()
-        action = np.array([-1000, 0])
+        action = np.array([0.01, 0.])
         #action, _states = model.predict(obs)
         obs, rew, done, info = env.step(action)
+        velocity.append(info["speed"][0])
+        lat_vel.append(info["speed"][1])
         rewards.append(rew)
         #if done:
         #    print(f'Finished after {t+1} steps.')
@@ -91,5 +95,10 @@ if __name__ == "__main__":
         env.render()
     env.close()
     
-    #plt.plot(rewards)
-    #plt.show()
+    plt.figure()
+    plt.plot(velocity, label='Long. Vel.')
+    plt.show()
+    plt.figure()
+    plt.plot(lat_vel, label='Lat. Vel.')
+    plt.legend()
+    plt.show()

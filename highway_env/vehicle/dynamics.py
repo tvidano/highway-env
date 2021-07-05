@@ -1,4 +1,5 @@
 from typing import Callable, Tuple
+import math
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,9 +7,8 @@ import matplotlib.pyplot as plt
 from highway_env.road.road import Road
 from highway_env.types import Vector
 from highway_env.vehicle.kinematics import Vehicle
-from highway_env.vehicle.tires import ConstantPacTire
+from highway_env.vehicle.tires import AbstractTire, ConstantPacTire
 
-# TODO{tvidano}: Create new bicycle model with lateral and long. forces
 class BicycleVehicle(Vehicle):
     """
     A dynamical bicycle model, with tire friction and slipping.
@@ -186,9 +186,15 @@ class BicycleVehicle(Vehicle):
 class CoupledDynamics(Vehicle):
     """Non-linear single track vehicle model for lateral dynamics and single wheel model for longitudinal dynamics."""
 
-    def __init__(self, road: Road, tire: ConstantPacTire, position: Vector, heading: float = 0, speed: float = 0) -> None:
+    def __init__(self, road: Road, position: Vector, heading: float = 0, speed: float = 0, tire: AbstractTire = ConstantPacTire) -> None:
+        """
+        :param road: the road instance where the object is placed in
+        :param position: global cartesian position of object in the surface
+        :param heading: the angle from positive direction of global horizontal axis
+        :param speed: global cartesian speed of object in the surface
+        :param tire: tire object
+        """
         super().__init__(road, position, heading, speed)
-        self.yaw_rate = 0 # rad/s
         self.mass = 12000/9.81 # kg
         self.inertia_z = 2000 # kg-m^2
         self.length = 4.5  # Meters
@@ -201,87 +207,103 @@ class CoupledDynamics(Vehicle):
         self.Fz_front = 9.81/2*self.mass*self.cg_b/self.length
         self.Fz_rear = 9.81/2*self.mass*self.cg_a/self.length
         self.mu = 1.0
-        self.front_tire = tire(np.array([0,0,self.Fz_front,self.mu]))
-        self.rear_tire = tire(np.array([0,0,self.Fz_rear,self.mu]))
-        self.front_wheel_angular_velocity = self.rear_wheel_angular_velocity = self.speed/self.wheel_radius
-        self.lateral_speed = 0
+        self.front_tire = tire(init_state=np.array([0,0,self.Fz_front,self.mu]))
+        self.rear_tire = tire(init_state=np.array([0,0,self.Fz_rear,self.mu]))
+
+        self.longitudinal_velocity = self.speed # m/s
+        self.lateral_velocity = 0 # m/s
+        self.yaw_rate = 0 # rad/s
+        self.front_wheel_angular_velocity = self.rear_wheel_angular_velocity = self.longitudinal_velocity/self.wheel_radius
     
     @property
     def state(self) -> np.ndarray:
         return np.array([[self.position[0]],
                          [self.position[1]],
-                         [self.heading],
-                         [self.speed],
-                         [self.lateral_speed],
+                         [self.longitudinal_velocity],
+                         [self.lateral_velocity],
                          [self.yaw_rate],
                          [self.front_wheel_angular_velocity],
                          [self.rear_wheel_angular_velocity]])
 
     def step(self, dt: float) -> None:
         self.clip_actions()
-        delta = self.action["steering"]
-        # Single wheel model to compute long. accel:
-        U, front_omega, rear_omega = self.RK4(self.long_dynamics, self.state[3,6,7], dt)
-        # Bicycle car model for computing next vehicle state:
-
+        self.longitudinal_velocity, self.front_wheel_angular_velocity =  \
+           self.RK4(self.long_dynamics, self.state[[2,5], 0], dt)
+        self.lateral_velocity, self.yaw_rate = self.RK4(self.lateral_dynamics, self.state[[3,4], 0], dt)
+        self.heading += self.yaw_rate*dt
+        c, s = np.cos(self.heading), np.sin(self.heading)
+        R = np.array(((c, -s), (s, c)))
+        velocity = R @ np.array([self.longitudinal_velocity, self.lateral_velocity])
+        self.position[0] += velocity[0]*dt
+        self.position[1] += velocity[1]*dt
+        
         self.on_state_update()
 
     def long_dynamics(self, current_long_state: np.ndarray) -> np.ndarray:
         """
         Longitudinal dynamics defined as two wheels. States are:
-            0. speed
+            0. longitudinal_velocity
             1. front_wheel_angular_velocity
             2. rear_wheel_angular_velocity
         """
-        front_kappa = self.compute_long_slip(current_long_state[0,1])
-        rear_kappa = self.compute_long_slip(current_long_state[0,2])
-        front_tire_state = self.front_tire.state
-        rear_tire_state = self.rear_tire.state
-        front_Fx, front_Fy = self.front_tire.get_forces(np.array([front_kappa,front_tire_state[1:]]))
-        rear_Fx,_ = self.rear_tire.get_force(np.array([rear_kappa,rear_tire_state[1:]]))
-
-        assert(1 > self.action["acceleration"] > -1)
+        assert(1 >= self.action["acceleration"] >= -1)
         if self.action["acceleration"] > 0:
             front_torque = self.action["acceleration"]*self.max_engine_torque
-            rear_torque = 0
+            is_braking = False
         else:
             front_torque = 0.6*self.action["acceleration"]*self.max_brake_torque
-            rear_torque = 0.4*self.action["acceleration"]*self.max_brake_torque
+            is_braking = True
         delta = self.action["steering"]
-        
-        dU = (front_Fx*np.cos(delta) + rear_Fx - front_Fy*np.sin(delta))/(self.mass/2)
-        domega_front = (front_torque - self.wheel_radius*front_Fx)/self.wheel_inertia
-        domega_rear = (rear_torque - self.wheel_radius*rear_Fx)/self.wheel_inertia
-        return np.array([dU,domega_front,domega_rear])
 
-    def compute_long_slip(self, long_velocity: float, angular_velocity: float) -> float:
-        if self.speed > 0:
-            kappa = -(long_velocity - self.wheel_radius*angular_velocity)/long_velocity
+        assert((current_long_state.ndim == 1) & (current_long_state.size == 2))
+        front_wheel_state = np.array(current_long_state[[0,1]])
+        front_kappa = self.compute_long_slip(front_wheel_state, is_braking)
+        front_tire_state = self.front_tire.state
+        front_Fx, front_Fy = self.front_tire.get_forces(
+            np.insert(front_tire_state[1:],0,front_kappa))
+        
+        front_F = front_Fx*np.cos(delta) - front_Fy*np.sin(delta)
+        F_drag = 1/2*1.225*(1.6 + 0.00056*(self.mass - 765))*self.longitudinal_velocity**2
+        d_U = 2*(front_F - F_drag)/self.mass
+        d_omega_front = (front_torque - self.wheel_radius*front_Fx)/self.wheel_inertia
+        return np.array([d_U, d_omega_front])
+
+    def compute_long_slip(self, wheel_state: np.ndarray, is_braking: bool) -> float:
+        """
+        States:
+            0. wheel center longitudinal velocity [m/s]
+            1. wheel rotational velocity [rad/s]
+        """
+        tangent_vel = self.wheel_radius*wheel_state[1]
+        if math.isclose(wheel_state[0],0,abs_tol=1e-3) & math.isclose(tangent_vel,0,abs_tol=1e-3):
+            return 0
+        if is_braking:
+            kappa = (tangent_vel - wheel_state[0])/wheel_state[0]
         else:
-            kappa = (self.wheel_radius - long_velocity)/(self.wheel_radius*angular_velocity)
+            kappa = (tangent_vel - wheel_state[0])/tangent_vel
         return kappa
 
     def lateral_dynamics(self, current_lat_state: np.ndarray) -> np.ndarray:
         """
         Lateral dynamics defined by nonlinear bicycle model. States are:
-            0. heading
-            1. longitudinal velocity
-            2. lateral velocity
-            2. yaw rate
+            0. lateral velocity [m/s]
+            1. yaw rate [rad/s]
         """
         delta = self.action["steering"]
-        heading, V_x, V_y, d_psi = current_lat_state
-        theta_vf = np.arctan2(V_y + self.cg_a * d_psi, V_x)
-        theta_vr = np.arctan2(V_y - self.cg_b * d_psi, V_x)
-        front_alpha = delta - current_lat_state[0]
-        rear_alpha = - current_lat_state[0]
+        V_x = self.longitudinal_velocity
+        V_y, d_psi = current_lat_state
+        theta_vf = np.arctan(V_y + self.cg_a * d_psi / V_x)
+        theta_vr = np.arctan(V_y - self.cg_b * d_psi / V_x)
+        front_alpha = delta - theta_vf
+        rear_alpha = - theta_vr
         kappa_f, _, Fz_f, mu_f = self.front_tire.state
         kappa_r, _, Fz_r, mu_r = self.rear_tire.state
-        _, front_Fy = self.front_tire.get_force(np.array([kappa_f, front_alpha, Fz_f, mu_f]))
-        _, rear_Fy = self.rear_tire.get_force(np.array([kappa_r, rear_alpha, Fz_r, mu_r]))
+        _, front_Fy = self.front_tire.get_forces(np.array([kappa_f, front_alpha, Fz_f, mu_f]))
+        _, rear_Fy = self.rear_tire.get_forces(np.array([kappa_r, rear_alpha, Fz_r, mu_r]))
 
-        d_V_y = 1/self.mass * (front_Fy + rear_Fy) - d_psi * V_x
-        dd_psi = 1/self.inertia_z * (self.cg_a * front_Fy - self.cg_b * rear_Fy)
+        d_V_y = 1/self.mass*(front_Fy + rear_Fy) - d_psi*V_x
+        dd_psi = 1/self.inertia_z*(self.cg_a*front_Fy - self.cg_b*rear_Fy)
+        return np.array([d_V_y, dd_psi])
 
     def RK4(self, ode_func: Callable, current_state: np.ndarray, dt: float) -> np.ndarray:
         """4th Order Runge-Kutta Numerical Integration."""
@@ -292,9 +314,14 @@ class CoupledDynamics(Vehicle):
         return current_state + (1/6)*(K1 + 2*K2 + 2*K3 + K4)*dt
 
     def clip_actions(self) -> None:
-        super().clip_actions()
+        if self.crashed:
+            self.action['steering'] = 0
+            self.action['acceleration'] = -1.0*self.longitudinal_velocity
+        self.action['steering'] = float(self.action['steering'])
+        self.action['acceleration'] = float(self.action['acceleration'])
         # Impose actuator limits
-        self.action["steering"] = np.clip(self.action["steering"], -np.pi/6, np.pi/6)
+        self.action['steering'] = np.clip(self.action['steering'], -np.pi/6, np.pi/6)
+        self.action['acceleration'] = np.clip(self.action['acceleration'], -1, 1)
     
     def set_friction(self, mu) -> None:
         self.mu = mu

@@ -124,10 +124,10 @@ class ConstantPacTire(AbstractTire):
     def state(self) -> np.ndarray:
         """
         The states are as follows:
-            0. longitudinal slip,
-            1. lateral slip,
-            2. normal force,
-            3. tire-road coefficient of friction
+            0. longitudinal slip [-1,1],
+            1. lateral slip [rad],
+            2. normal force [N],
+            3. tire-road coefficient of friction (0,1]
         """
         return self._state
     
@@ -136,14 +136,14 @@ class ConstantPacTire(AbstractTire):
         assert(new_state.size == 4)
         assert(1 >= new_state[0] >= -1)
         assert(new_state[2] > 0)
-        assert(1 > new_state[3] > 0)
+        assert(1 >= new_state[3] > 0)
         self._state = new_state
 
     def get_forces(self, new_state: np.ndarray = None) -> np.ndarray:
-        kappa = new_state[0] if new_state else self.state[0] # longitudinal slip [-1,1]
-        alpha = new_state[1] if new_state else self.state[1] # lateral slip [rad]
-        Fz = new_state[2] if new_state else self.state[2] # normal force [N]
-        mu = new_state[3] if new_state else self.state[3] # tire-road coefficient of friction (0,1]
+        if new_state is not None:
+            kappa, alpha, Fz, mu = new_state
+        else:
+            kappa, alpha, Fz, mu = self.state
         F_max = mu*Fz
         pac = lambda Fz,mu,C,B,E,input : Fz*mu*np.sin(C*np.arctan(B*input - E*(B*input
             - np.arctan(B*input))))

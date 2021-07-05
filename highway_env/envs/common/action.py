@@ -2,8 +2,8 @@ from typing import TYPE_CHECKING, Optional, Union, Tuple, Callable
 from gym import spaces
 import numpy as np
 
-from highway_env import utils
-from highway_env.vehicle.dynamics import BicycleVehicle
+from highway_env import utils, vehicle
+from highway_env.vehicle.dynamics import BicycleVehicle, CoupledDynamics
 from highway_env.vehicle.kinematics import Vehicle
 from highway_env.vehicle.controller import MDPVehicle
 
@@ -82,6 +82,7 @@ class ContinuousAction(ActionType):
                  lateral: bool = True,
                  dynamical: bool = False,
                  clip: bool = True,
+                 vehicle_class: Vehicle = None,
                  **kwargs) -> None:
         """
         Create a continuous action space.
@@ -104,6 +105,7 @@ class ContinuousAction(ActionType):
         self.dynamical = dynamical
         self.clip = clip
         self.last_action = np.zeros(self.space().shape)
+        self._vehicle_class = vehicle_class
 
     def space(self) -> spaces.Box:
         size = 2 if self.lateral and self.longitudinal else 1
@@ -111,7 +113,13 @@ class ContinuousAction(ActionType):
 
     @property
     def vehicle_class(self) -> Callable:
-        return Vehicle if not self.dynamical else BicycleVehicle
+
+        if self._vehicle_class is None:
+            return Vehicle if not self.dynamical else BicycleVehicle
+        elif self._vehicle_class is BicycleVehicle:
+            return BicycleVehicle
+        elif self._vehicle_class is CoupledDynamics:
+            return CoupledDynamics
 
     def act(self, action: np.ndarray) -> None:
         if self.clip:
