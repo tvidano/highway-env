@@ -1,4 +1,4 @@
-from highway_env.vehicle.dynamics import CoupledDynamics
+from highway_env.vehicle.dynamics import BicycleVehicle, CoupledDynamics
 from os import replace
 import warnings
 from typing import List, Tuple, Optional, Callable
@@ -45,9 +45,9 @@ class CollisionEnv(HighwayEnv):
             "action": {
                 "type": "ContinuousAction",
                 #"dynamical": True
-                "vehicle_class": CoupledDynamics
+                "vehicle_class": CoupledDynamics #BicycleVehicle
             },
-            "initial_ego_speed": 20,
+            "initial_ego_speed": 20, # [m/s]
             "simulation_frequency": 50,  # [Hz]
             "policy_frequency": 10,  # [Hz]
             "lanes_count": 3,
@@ -209,8 +209,11 @@ class CollisionEnv(HighwayEnv):
         :return: info dict
         """
         info = {
-            "speed": (self.vehicle.longitudinal_velocity, self.vehicle.lateral_velocity),
-            "tire_forces": (self.vehicle.front_tire.get_forces(), self.vehicle.front_tire.get_forces()),
+            "speed": np.array([self.vehicle.longitudinal_velocity, 
+                               self.vehicle.lateral_velocity, 
+                               self.vehicle.front_wheel_angular_velocity]),
+            "tire_forces": self.vehicle.tire_forces,
+            "slip_values": self.vehicle.slip_values,
             "crashed": self.vehicle.crashed,
             "action": action,
         }

@@ -134,7 +134,7 @@ class ConstantPacTire(AbstractTire):
     @state.setter
     def state(self, new_state) -> None:
         assert(new_state.size == 4)
-        assert(1 >= new_state[0] >= -1)
+        #assert(1 >= new_state[0] >= -1)
         assert(new_state[2] > 0)
         assert(1 >= new_state[3] > 0)
         self._state = new_state

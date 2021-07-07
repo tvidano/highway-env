@@ -79,26 +79,44 @@ if __name__ == "__main__":
     model_params = []
     rewards = []
     velocity = []
-    lat_vel = []
+    forces = []
+    slips = []
     done = False
     while not done:
         #action = env.action_space.sample()
-        action = np.array([0.01, 0.])
+        action = np.array([-0.1, 0.])
         #action, _states = model.predict(obs)
         obs, rew, done, info = env.step(action)
-        velocity.append(info["speed"][0])
-        lat_vel.append(info["speed"][1])
+        velocity.append(info["speed"])
+        forces.append(info["tire_forces"])
+        slips.append(info["slip_values"])
         rewards.append(rew)
         #if done:
         #    print(f'Finished after {t+1} steps.')
         #    break
         env.render()
     env.close()
+    velocity = np.vstack(velocity)
+    forces = np.vstack(forces)
+    slips = np.vstack(slips)
     
     plt.figure()
-    plt.plot(velocity, label='Long. Vel.')
-    plt.show()
-    plt.figure()
-    plt.plot(lat_vel, label='Lat. Vel.')
-    plt.legend()
+    plt.subplot(231)
+    plt.plot(velocity[:,0])
+    plt.title('Long. Vel.')
+    plt.subplot(232)
+    plt.plot(velocity[:,2])
+    plt.title('Front Omega')
+    plt.subplot(233)
+    plt.plot(forces[:,0])
+    plt.title('Front Fx')
+    plt.subplot(234)
+    plt.plot(forces[:,1])
+    plt.title('Front Fy')
+    plt.subplot(235)
+    plt.plot(slips[:,0])
+    plt.title('Front kappa')
+    plt.subplot(236)
+    plt.plot(slips[:,1])
+    plt.title('Front Alpha')
     plt.show()
