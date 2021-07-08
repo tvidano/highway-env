@@ -48,23 +48,23 @@ if __name__ == "__main__":
     #env = gym.make('highway-v0')
 
     env.configure({
-        "manual_control": True,
+        "manual_control": False,
         # "action": {
         #     "type": "ContinuousAction", # DiscreteMetaAction
         #     "dynamical": False
         # },
         "simulation_frequency": 15,  # [Hz]
         "policy_frequency": 10,  # [Hz]
-        "offroad_terminal": False,
+        "offroad_terminal": True,
         "lanes_count": 3,
         "vehicles_density": 2,
-        "vehicles_count": 0,
+        "vehicles_count": 20,
         "controlled_vehicles": 1,
         "screen_width": 900,  # [px]
         "screen_height": 150,  # [px]
         "other_vehicles_type": "highway_env.vehicle.behavior.IDMVehicle",
-        "stopping_vehicles_count": 0,
-        "duration": 30,  # [s]
+        "stopping_vehicles_count": 2,
+        "duration": 10,  # [s]
     })
 
     #check_env(env)
@@ -76,25 +76,28 @@ if __name__ == "__main__":
     #model.load("ppo_collision")
 
     obs = env.reset()
+    env.render()
     model_params = []
     rewards = []
     velocity = []
     forces = []
     slips = []
+    ttc = []
     done = False
     while not done:
         #action = env.action_space.sample()
-        action = np.array([-0.1, 0.])
+        action = np.array([-0.5, 0.0])
         #action, _states = model.predict(obs)
         obs, rew, done, info = env.step(action)
         velocity.append(info["speed"])
         forces.append(info["tire_forces"])
         slips.append(info["slip_values"])
+        ttc.append(info["ttc"])
         rewards.append(rew)
         #if done:
         #    print(f'Finished after {t+1} steps.')
         #    break
-        env.render()
+        
     env.close()
     velocity = np.vstack(velocity)
     forces = np.vstack(forces)
@@ -119,4 +122,6 @@ if __name__ == "__main__":
     plt.subplot(236)
     plt.plot(slips[:,1])
     plt.title('Front Alpha')
+    plt.figure()
+    plt.plot(ttc)
     plt.show()

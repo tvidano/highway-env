@@ -22,6 +22,9 @@ class CollisionEnv(HighwayEnv):
     rewarded based on its ability to avoid that collision or mitigate the 
     damage of the collision.
     """
+    def __init__(self, config: dict = None) -> None:
+        super().__init__(config)
+        self.time_to_collision = np.inf
 
     @classmethod
     def default_config(cls) -> dict:
@@ -61,11 +64,11 @@ class CollisionEnv(HighwayEnv):
             "collision_imminent_reward": .00,
             "collision_max_reward": 0.3,
             "collision_sensitivity": 1/40,
-            "time_after_collision": 3, # [s]
+            "time_after_collision": 0, # [s]
             "offroad_terminal": True,
             "stopping_vehicles_count": 2,
             "look_ahead_distance": 50, # [m]
-            "time_to_intervene": 1 # [s]
+            "time_to_intervene": 5 # [s]
         })
         return config
 
@@ -117,7 +120,7 @@ class CollisionEnv(HighwayEnv):
         if self.road is None or self.vehicle is None:
             raise NotImplementedError("The road and vehicle must be initialized in the environment implementation")
 
-        if self._imminent_collision():
+        if not self._imminent_collision():
             action = np.array([0,0])
         self.steps += 1
         self._simulate(action)
@@ -145,14 +148,14 @@ class CollisionEnv(HighwayEnv):
             self._automatic_rendering()
 
     def _imminent_collision(self) -> bool:
-        """Determines if a collision is about to happen."""
+        """Returns True if a collision is about to happen."""
         front_vehicle,_ = self.road.neighbour_vehicles(self.vehicle, self.vehicle.lane_index)
         relative_distance = front_vehicle.position[0] - self.vehicle.position[0] if front_vehicle else np.inf
         if relative_distance > self.config["look_ahead_distance"]:
             return False
         relative_x_velocity = front_vehicle.velocity[0] - self.vehicle.velocity[0]
-        time_to_collision = np.inf if relative_x_velocity >= 0 else -relative_distance - self.vehicle.LENGTH/ relative_x_velocity
-        return False if time_to_collision > self.config["time_to_intervene"] else True
+        self.time_to_collision = np.inf if relative_x_velocity >= 0 else (-relative_distance - self.vehicle.LENGTH)/ relative_x_velocity
+        return False if self.time_to_collision > self.config["time_to_intervene"] else True
 
     def _reward(self, action: Action) -> float:
         """
@@ -214,6 +217,7 @@ class CollisionEnv(HighwayEnv):
                                self.vehicle.front_wheel_angular_velocity]),
             "tire_forces": self.vehicle.tire_forces,
             "slip_values": self.vehicle.slip_values,
+            "ttc": self.time_to_collision,
             "crashed": self.vehicle.crashed,
             "action": action,
         }

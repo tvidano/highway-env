@@ -229,7 +229,7 @@ class CoupledDynamics(Vehicle):
 
     def step(self, dt: float) -> None:
         self.clip_actions()
-        if self.action["acceleration"] > 0:
+        if self.action["acceleration"] >= 0:
             self.is_braking = False
         else:
             self.is_braking = True
@@ -283,7 +283,7 @@ class CoupledDynamics(Vehicle):
             np.insert(front_tire_state[1:],0,front_kappa))
         
         front_F = front_Fx*np.cos(delta) - front_Fy*np.sin(delta)
-        #F_drag = 1/2*1.225*(1.6 + 0.00056*(self.mass - 765))*self.longitudinal_velocity**2
+        F_drag = 1/2*1.225*(1.6 + 0.00056*(self.mass - 765))*self.longitudinal_velocity**2
         F_drag = 0
         d_U = 2*(front_F - F_drag)/self.mass
         d_omega_front = (front_torque - self.wheel_radius*front_Fx)/self.wheel_inertia
@@ -318,10 +318,8 @@ class CoupledDynamics(Vehicle):
         front_alpha, rear_alpha = self.compute_lat_slip(V_x, V_y, d_psi)
         kappa_f, _, Fz_f, mu_f = self.front_tire.state
         kappa_r, _, Fz_r, mu_r = self.rear_tire.state
-        # front_Fx, front_Fy = self.front_tire.get_forces(np.array([kappa_f, front_alpha, Fz_f, mu_f]))
-        # _, rear_Fy = self.rear_tire.get_forces(np.array([kappa_r, rear_alpha, Fz_r, mu_r]))
-        front_Fy = front_alpha*2000
-        rear_Fy = rear_alpha*2000
+        front_Fx, front_Fy = self.front_tire.get_forces(np.array([kappa_f, front_alpha, Fz_f, mu_f]))
+        _, rear_Fy = self.rear_tire.get_forces(np.array([kappa_r, rear_alpha, Fz_r, mu_r]))
         if abs(self.longitudinal_velocity) < 1:  # Low speed dynamics: damping of lateral speed and yaw rate
             front_Fy = - self.mass * self.lateral_velocity - self.inertia_z/self.cg_a* self.yaw_rate
             rear_Fy = - self.mass * self.lateral_velocity + self.inertia_z/self.cg_a * self.yaw_rate
