@@ -8,7 +8,6 @@ from highway_env.road.road import Road, RoadNetwork
 from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
 
-import warnings
 
 class HighwayEnv(AbstractEnv):
     """
@@ -43,15 +42,13 @@ class HighwayEnv(AbstractEnv):
                                        # lower speeds according to config["reward_speed_range"].
             "lane_change_reward": 0,   # The reward received at each lane change action.
             "reward_speed_range": [20, 30],
-            "offroad_terminal": False,
-            "stopping_vehicles_count": 0
+            "offroad_terminal": False
         })
         return config
 
     def _reset(self) -> None:
         self._create_road()
         self._create_vehicles()
-        self._choose_stopping_vehicles()
 
     def _create_road(self) -> None:
         """Create a road composed of straight adjacent lanes."""
@@ -78,20 +75,6 @@ class HighwayEnv(AbstractEnv):
                 self.road.vehicles.append(
                     other_vehicles_type.create_random(self.road, spacing=1 / self.config["vehicles_density"])
                 )
-    
-    def _choose_stopping_vehicles(self) -> None:
-        """Randomly choose non-controlled vehicles to stop abruptly at a random time."""
-        stopping_vehicles_count = self.config["stopping_vehicles_count"]
-        uncontrolled_vehicles = [vehicle for vehicle in self.road.vehicles if vehicle not in self.controlled_vehicles]
-        try:
-            chosen_vehicles = self.road.np_random.choice(uncontrolled_vehicles, stopping_vehicles_count, replace=False)
-        except ValueError:
-            warnings.warn(f'Chose {stopping_vehicles_count} vehicles to stop abruptly when only '
-                          f'{len(uncontrolled_vehicles)} vehicles are uncontrolled. '
-                          'Selecting all uncontrolled vehicles...')
-            chosen_vehicles = uncontrolled_vehicles
-        for chosen_vehicle in chosen_vehicles:
-            chosen_vehicle.target_speed = 0
             
 
     def _reward(self, action: Action) -> float:
