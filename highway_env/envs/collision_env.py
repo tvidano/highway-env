@@ -25,11 +25,28 @@ class CollisionEnv(HighwayEnv):
     def __init__(self, config: dict = None) -> None:
         super().__init__(config)
         self.time_to_collision = np.inf
+        self.stopping_vehicles = self._choose_stopping_vehicles()
 
     @classmethod
     def default_config(cls) -> dict:
         config = super().default_config()
         config.update({
+            "action": {
+                "type": "ContinuousAction",
+                "vehicle_class": CoupledDynamics #BicycleVehicle
+            },
+            "collision_avoided_reward": 1,
+            "collision_imminent_reward": .00,
+            "collision_max_reward": 0.3,
+            "collision_sensitivity": 1/40,
+            "controlled_vehicles": 1,
+            "duration": 10, # [s]
+            "ego_spacing": 2,
+            "initial_ego_speed": 20, # [m/s]
+            "initial_lane_id": None,
+            "lanes_count": 3,
+            "look_ahead_distance": 50, # [m]
+            "manual_control": False,
             "observation": {
                 "type": "Kinematics",
                 "vehicles_count": 50,
@@ -45,30 +62,17 @@ class CollisionEnv(HighwayEnv):
                 "flatten": False,
                 "observe_intentions": False,
             },
-            "action": {
-                "type": "ContinuousAction",
-                #"dynamical": True
-                "vehicle_class": CoupledDynamics #BicycleVehicle
-            },
-            "initial_ego_speed": 20, # [m/s]
-            "simulation_frequency": 50,  # [Hz]
-            "policy_frequency": 10,  # [Hz]
-            "lanes_count": 3,
-            "vehicles_count": 20,
-            "controlled_vehicles": 1,
-            "initial_lane_id": None,
-            "duration": 20, # [s]
-            "ego_spacing": 2,
-            "vehicles_density": 2,
-            "collision_avoided_reward": 1,
-            "collision_imminent_reward": .00,
-            "collision_max_reward": 0.3,
-            "collision_sensitivity": 1/40,
-            "time_after_collision": 0, # [s]
             "offroad_terminal": True,
-            "stopping_vehicles_count": 2,
-            "look_ahead_distance": 50, # [m]
-            "time_to_intervene": 5 # [s]
+            "other_vehicles_type": "highway_env.vehicle.behavior.IDMVehicle",
+            "policy_frequency": 10,  # [Hz]
+            "screen_height": 150,  # [px]
+            "screen_width": 900,  # [px]
+            "simulation_frequency": 20,  # [Hz]
+            "stopping_vehicles_count": 5,
+            "time_after_collision": 0, # [s]
+            "time_to_intervene": 10, # [s]
+            "vehicles_count": 5,
+            "vehicles_density": 2
         })
         return config
 
@@ -101,8 +105,21 @@ class CollisionEnv(HighwayEnv):
             len(other_vehicles) // 2, replace=False)
         for select_vehicle in select_vehicles:
             dist_from_ego = select_vehicle.position[0] - ego_pos_x
-            select_vehicle.position[0] = ego_pos_x - dist_from_ego
-            
+            select_vehicle.position[0] = ego_pos_x - dist_from_ego - self.road.np_random.uniform(5, 20)
+    
+    def _choose_stopping_vehicles(self) -> list:
+        """Randomly choose non-controlled vehicles to stop abruptly."""
+        stopping_vehicles_count = self.config["stopping_vehicles_count"]
+        uncontrolled_vehicles = [vehicle for vehicle in self.road.vehicles if vehicle not in self.controlled_vehicles]
+        try:
+            chosen_vehicles = self.road.np_random.choice(uncontrolled_vehicles, stopping_vehicles_count, replace=False)
+        except ValueError:
+            warnings.warn(f'Chose {stopping_vehicles_count} vehicles to stop abruptly when only '
+                          f'{len(uncontrolled_vehicles)} vehicles are uncontrolled. '
+                          'Selecting all uncontrolled vehicles...')
+            chosen_vehicles = uncontrolled_vehicles
+        stopping_times = self.road.np_random.random_integers(0, self.config["duration"], stopping_vehicles_count)
+        return chosen_vehicles
 
     def step(self, action: Action) -> Tuple[Observation, float, bool, dict]:
         """
@@ -124,6 +141,10 @@ class CollisionEnv(HighwayEnv):
             action = np.array([0,0])
         self.steps += 1
         self._simulate(action)
+
+        # For debugging the target speed overridden problem.
+        uncontrolled_vehicles = [vehicle for vehicle in self.road.vehicles if vehicle not in self.controlled_vehicles]
+        print(uncontrolled_vehicles[0].target_speed)
 
         obs = self.observation_type.observe()
         reward = self._reward(action)
@@ -154,7 +175,7 @@ class CollisionEnv(HighwayEnv):
         if relative_distance > self.config["look_ahead_distance"]:
             return False
         relative_x_velocity = front_vehicle.velocity[0] - self.vehicle.velocity[0]
-        self.time_to_collision = np.inf if relative_x_velocity >= 0 else (-relative_distance - self.vehicle.LENGTH)/ relative_x_velocity
+        self.time_to_collision = np.inf if relative_x_velocity >= 0 else - (relative_distance - self.vehicle.LENGTH)/ relative_x_velocity
         return False if self.time_to_collision > self.config["time_to_intervene"] else True
 
     def _reward(self, action: Action) -> float:
