@@ -62,6 +62,7 @@ if __name__ == "__main__":
 
     obs = env.reset()
     env.render()
+    times = []
     model_params = []
     rewards = []
     velocity = []
@@ -77,6 +78,7 @@ if __name__ == "__main__":
         #action, _states = model.predict(obs)
 
         obs, rew, done, info = env.step(action)
+        times.append(info["time"])
         velocity.append(info["speed"])
         forces.append(info["tire_forces"])
         slips.append(info["slip_values"])
@@ -90,23 +92,23 @@ if __name__ == "__main__":
     
     plt.figure()
     plt.subplot(231)
-    plt.plot(velocity[:,0])
+    plt.plot(times, velocity[:,0])
     plt.title('Long. Vel.')
     plt.subplot(232)
-    plt.plot(velocity[:,2])
+    plt.plot(times, velocity[:,2])
     plt.title('Front Omega')
     plt.subplot(233)
-    plt.plot(forces[:,0])
+    plt.plot(times, forces[:,0])
     plt.title('Front Fx')
     plt.subplot(234)
-    plt.plot(forces[:,1])
+    plt.plot(times, forces[:,1])
     plt.title('Front Fy')
     plt.subplot(235)
-    plt.plot(slips[:,0])
+    plt.plot(times, slips[:,0])
     plt.title('Front kappa')
     plt.subplot(236)
-    plt.plot(slips[:,1])
+    plt.plot(times, slips[:,1])
     plt.title('Front Alpha')
     plt.figure()
-    plt.plot(ttc)
+    plt.plot(times, ttc)
     plt.show()

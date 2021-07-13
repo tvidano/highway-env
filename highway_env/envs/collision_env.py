@@ -211,14 +211,15 @@ class CollisionEnv(HighwayEnv):
         :return: info dict
         """
         info = {
+            "action": action,
+            "crashed": self.vehicle.crashed,
+            "slip_values": self.vehicle.slip_values,
             "speed": np.array([self.vehicle.longitudinal_velocity, 
                                self.vehicle.lateral_velocity, 
                                self.vehicle.front_wheel_angular_velocity]),
+            "time": self.time,
             "tire_forces": self.vehicle.tire_forces,
-            "slip_values": self.vehicle.slip_values,
             "ttc": self.time_to_collision,
-            "crashed": self.vehicle.crashed,
-            "action": action,
         }
         return info
 
