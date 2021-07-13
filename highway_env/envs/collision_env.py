@@ -54,7 +54,7 @@ class CollisionEnv(HighwayEnv):
             "simulation_frequency": 50,  # [Hz]
             "policy_frequency": 10,  # [Hz]
             "lanes_count": 3,
-            "vehicles_count": 20,
+            "vehicles_count": 2,
             "controlled_vehicles": 1,
             "initial_lane_id": None,
             "duration": 20, # [s]
