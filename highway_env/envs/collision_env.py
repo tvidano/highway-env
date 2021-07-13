@@ -30,6 +30,21 @@ class CollisionEnv(HighwayEnv):
     def default_config(cls) -> dict:
         config = super().default_config()
         config.update({
+            "action": {
+                "type": "ContinuousAction",
+                "vehicle_class": CoupledDynamics
+            },
+            "collision_avoided_reward": 1,
+            "collision_imminent_reward": .00,
+            "collision_max_reward": 0.3,
+            "collision_sensitivity": 1/40,
+            "controlled_vehicles": 1,
+            "duration": 20, # [s]
+            "ego_spacing": 2,
+            "initial_ego_speed": 20, # [m/s]
+            "initial_lane_id": None,
+            "lanes_count": 3,
+            "look_ahead_distance": 50, # [m]
             "observation": {
                 "type": "Kinematics",
                 "vehicles_count": 50,
@@ -45,30 +60,14 @@ class CollisionEnv(HighwayEnv):
                 "flatten": False,
                 "observe_intentions": False,
             },
-            "action": {
-                "type": "ContinuousAction",
-                #"dynamical": True
-                "vehicle_class": CoupledDynamics #BicycleVehicle
-            },
-            "initial_ego_speed": 20, # [m/s]
-            "simulation_frequency": 50,  # [Hz]
-            "policy_frequency": 10,  # [Hz]
-            "lanes_count": 3,
-            "vehicles_count": 2,
-            "controlled_vehicles": 1,
-            "initial_lane_id": None,
-            "duration": 20, # [s]
-            "ego_spacing": 2,
-            "vehicles_density": 2,
-            "collision_avoided_reward": 1,
-            "collision_imminent_reward": .00,
-            "collision_max_reward": 0.3,
-            "collision_sensitivity": 1/40,
-            "time_after_collision": 0, # [s]
             "offroad_terminal": True,
+            "policy_frequency": 10,  # [Hz]
+            "simulation_frequency": 10,  # [Hz]
             "stopping_vehicles_count": 2,
-            "look_ahead_distance": 50, # [m]
-            "time_to_intervene": 5 # [s]
+            "time_after_collision": 0, # [s] for capturing rear-end collisions
+            "time_to_intervene": 5, # [s]
+            "vehicles_count": 2,
+            "vehicles_density": 2,
         })
         return config
 
