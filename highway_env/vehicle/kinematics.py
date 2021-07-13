@@ -147,7 +147,7 @@ class Vehicle(RoadObject):
         if self.crashed:
             self.action['steering'] = 0
             try:
-                self.action['acceleration'] = -self.acc_max if self.speed > 0 else 0
+                self.action['acceleration'] = -1.1*self.acc_max if self.speed > 0 else 0
             except:
                 print('not using max_acc')
                 self.action['acceleration'] = -1.0*self.speed
