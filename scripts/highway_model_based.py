@@ -43,6 +43,7 @@ if __name__ == "__main__":
     # Recommended Environment Hypertuning Parameters:
     # env.configure({
     #     "duration": 10,  # [s]
+    #     "road_friction": 1.0,
     #     "stopping_vehicles_count": 5,
     #     "time_to_intervene": 2, # [s]
     #     "time_after_collision": 0, # [s]

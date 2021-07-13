@@ -61,8 +61,9 @@ class CollisionEnv(HighwayEnv):
                 "observe_intentions": False,
             },
             "offroad_terminal": True,
-            "policy_frequency": 10,  # [Hz]
-            "simulation_frequency": 10,  # [Hz]
+            "policy_frequency": 15,  # [Hz]
+            "road_friction": 1.0, # Road-tire coefficient of friction (0,1]
+            "simulation_frequency": 15,  # [Hz]
             "stopping_vehicles_count": 2,
             "time_after_collision": 0, # [s] for capturing rear-end collisions
             "time_to_intervene": 5, # [s]
@@ -85,6 +86,7 @@ class CollisionEnv(HighwayEnv):
             lane_id=self.config["initial_lane_id"],
             spacing=self.config["ego_spacing"]
         )
+        controlled_vehicle.mu = self.config["road_friction"]
         self.controlled_vehicles.append(controlled_vehicle)
         self.road.vehicles.append(controlled_vehicle)
 
@@ -92,6 +94,7 @@ class CollisionEnv(HighwayEnv):
         for _ in range(self.config["vehicles_count"]):
             other_vehicle = other_vehicles_type.create_random(self.road, \
                 spacing = 1 / (self.config["vehicles_density"] * 2))
+            other_vehicle.mu = self.config["road_friction"]
             self.road.vehicles.append(other_vehicle)
             other_vehicles.append(other_vehicle)
 

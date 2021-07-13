@@ -17,10 +17,6 @@ class IDMVehicle(ControlledVehicle):
     - Lateral: the MOBIL model decides when to change lane by maximizing the acceleration of nearby vehicles.
     """
 
-    # Longitudinal policy parameters
-    ACC_MAX = 6.0  # [m/s2]
-    """Maximum acceleration."""
-
     COMFORT_ACC_MAX = 3.0  # [m/s2]
     """Desired maximum acceleration."""
 
@@ -55,6 +51,17 @@ class IDMVehicle(ControlledVehicle):
         super().__init__(road, position, heading, speed, target_lane_index, target_speed, route)
         self.enable_lane_change = enable_lane_change
         self.timer = timer or (np.sum(self.position)*np.pi) % self.LANE_CHANGE_DELAY
+        # Longitudinal policy parameters
+        self.mu = 1.0 # tire-road coefficient of friction (0,1]
+        self.acc_max_g = 0.43*self.mu + 0.07 # [g's] @1.0 gs = 0.5, @0.2 gs = 0.18; mu*0.425 + 0.075
+        self._acc_max = self.acc_max_g*9.81 # [m/s2]
+
+    @property
+    def acc_max(self) -> float:
+        # Longitudinal policy parameters
+        self.acc_max_g = 0.43*self.mu + 0.07 # [g's] @1.0 gs = 0.5, @0.2 gs = 0.18; mu*0.425 + 0.075
+        self._acc_max = self.acc_max_g*9.81 # [m/s2]
+        return self._acc_max
 
     def randomize_behavior(self):
         pass
@@ -106,7 +113,7 @@ class IDMVehicle(ControlledVehicle):
                                                         rear_vehicle=rear_vehicle)
             action['acceleration'] = min(action['acceleration'], target_idm_acceleration)
         # action['acceleration'] = self.recover_from_stop(action['acceleration'])
-        action['acceleration'] = np.clip(action['acceleration'], -self.ACC_MAX, self.ACC_MAX)
+        action['acceleration'] = np.clip(action['acceleration'], -self.acc_max, self.acc_max)
         Vehicle.act(self, action)  # Skip ControlledVehicle.act(), or the command will be overriden.
 
     def step(self, dt: float):
