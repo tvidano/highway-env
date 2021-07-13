@@ -269,10 +269,14 @@ class CoupledDynamics(Vehicle):
             1. front_wheel_angular_velocity
         """
         assert(1 >= self.action["acceleration"] >= -1)
-        if not self.is_braking:
-            front_torque = self.action["acceleration"]*self.max_engine_torque
+        if self.is_braking:
+            front_torque = 2*self.action["acceleration"]*self.max_brake_torque
+            F_drag = 1/2*1.225*(1.6 + 0.00056*(self.mass - 765))*self.longitudinal_velocity**2
+            full_braking_compensation = 1.3
         else:
-            front_torque = self.action["acceleration"]*self.max_brake_torque
+            front_torque = self.action["acceleration"]*self.max_engine_torque
+            F_drag = 0 # assume driver maintains speed, negating drag.
+            full_braking_compensation = 1
         delta = self.action["steering"]
 
         assert((current_long_state.ndim == 1) & (current_long_state.size == 2))
@@ -283,8 +287,7 @@ class CoupledDynamics(Vehicle):
             np.insert(front_tire_state[1:],0,front_kappa))
         
         front_F = front_Fx*np.cos(delta) - front_Fy*np.sin(delta)
-        F_drag = 1/2*1.225*(1.6 + 0.00056*(self.mass - 765))*self.longitudinal_velocity**2
-        F_drag = 0
+        front_F *= full_braking_compensation
         d_U = 2*(front_F - F_drag)/self.mass
         d_omega_front = (front_torque - self.wheel_radius*front_Fx)/self.wheel_inertia
         return np.array([d_U, d_omega_front])
