@@ -30,7 +30,7 @@ if 'highway_env' not in sys.modules:
     try:
         import highway_env
     except ImportError:
-        sys.path.append(r'..')
+        sys.path.append('/home/trevor/Documents/Python_files/highway-env')
         import highway_env
 
 # ==================================
