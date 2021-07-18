@@ -223,6 +223,7 @@ class CollisionEnv(HighwayEnv):
             "time": self.time,
             "tire_forces": self.vehicle.tire_forces,
             "ttc": self.time_to_collision,
+            "imminent": self._imminent_collision(),
         }
         return info
 
