@@ -67,7 +67,7 @@ class CollisionEnv(HighwayEnv):
             "stopping_vehicles_count": 2,
             "time_after_collision": 0, # [s] for capturing rear-end collisions
             "time_to_intervene": 5, # [s]
-            "vehicles_count": 2,
+            "vehicles_count": 40,
             "vehicles_density": 2,
         })
         return config
