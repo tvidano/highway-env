@@ -52,6 +52,7 @@ class CollisionEnv(HighwayEnv):
             "observation": {
                 "type": "Kinematics",
                 "vehicles_count": 50,
+                "see_behind": False,
                 "features": ["presence", "x", "y", "vx", "vy"],
                 "features_range": {
                     "x": [-100, 100],
@@ -130,19 +131,23 @@ class CollisionEnv(HighwayEnv):
         if self.road is None or self.vehicle is None:
             raise NotImplementedError("The road and vehicle must be initialized in the environment implementation")
 
+        #state machine for controlling whether the car is 'active' or not
+        GREEN = (50, 200, 0)
+        ORANGE = (255, 150, 0)
+        YELLOW = (200, 200, 0)
         if self.active == 0:
-            self.controlled_vehicles[0].color = (50, 200, 0)
+            self.controlled_vehicles[0].color = GREEN
             if self._imminent_collision():
                 self.active = 1
             else:
                 action = np.array([0, 0])
         if self.active == 1:
-            self.controlled_vehicles[0].color = (200, 200, 0)
+            self.controlled_vehicles[0].color = YELLOW
             if not self._imminent_collision():
                 self.active = 2
                 self.time_since_avoidance = self.time
         if self.active == 2:
-            self.controlled_vehicles[0].color = (255, 150, 0)
+            self.controlled_vehicles[0].color = ORANGE
             if (self.time - self.time_since_avoidance) > self.config["control_time_after_avoid"]:
                 self.active = 0
 
