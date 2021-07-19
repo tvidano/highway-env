@@ -60,21 +60,34 @@ if __name__ == "__main__":
     totalruns = 100  # number of runs, obviously
     render_env = True  # whether to render the car
     report_every = 10  # how often to report running progress Ex. every 5th run
-    model_name = 'default'
+    model_name = 'PPO'
+    do_training = False
 
     reward_stats = []
     num_mitigated = 0
     num_crashed = 0
     num_no_interaction = 0
+    num_offroad = 0
 
 
-    # Uncomment to try training an PPO algorithm on this environemt:
-    #model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,
-                #batch_size=64, n_epochs=10,verbose=1)
-    model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
-    #model.learn(total_timesteps=10000, )
-    #model.save(model_name.lower() + "_collision")
-    model.load(model_name.lower() + "_collision")
+    if model_name == 'default':
+        model = None
+
+    elif model_name == 'PPO':
+        model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048, batch_size=64, n_epochs=10,verbose=1)
+        if do_training:
+            model.learn(total_timesteps=10000, )
+            model.save(model_name.lower() + "_collision")
+        model.load(model_name.lower() + "_collision")
+
+    elif model_name == 'A2C':
+        model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
+        if do_training:
+            model.learn(total_timesteps=10000, )
+            model.save(model_name.lower() + "_collision")
+        model.load(model_name.lower() + "_collision")
+
+
 
     print("Model", model_name, "trained/loaded")
 
@@ -119,6 +132,8 @@ if __name__ == "__main__":
                 end_state = "mitigated"
             if info["crashed"]:
                 end_state = "crashed"
+            if not info['onroad'] and done:
+                end_state = 'offroad'
 
         env.close()
 
@@ -126,6 +141,8 @@ if __name__ == "__main__":
         num_no_interaction += end_state == 'none'
         num_crashed += end_state == 'crashed'
         num_mitigated += end_state == 'mitigated'
+        num_offroad += end_state == 'offroad'
+
 
         if report_every and i%report_every == 0:
             print(end_state)
@@ -139,8 +156,9 @@ if __name__ == "__main__":
     print("Average reward: ", sum(reward_stats)/len(reward_stats))
     print("Number of runs without intervention needed (dummy runs): ", num_no_interaction)
     print("Number of runs with crashes: ", num_crashed)
+    print("Number of runs that ended offroad: ", num_offroad)
     print("Number of runs with collisions avoided: ", num_mitigated)
-    print("Success rate at avoiding collisions: ", num_mitigated/(num_crashed+num_mitigated), '%')
+    print("Success rate at avoiding collisions: ", num_mitigated/(num_crashed+num_mitigated+num_offroad), '%')
 
     # Uncomment to see plots of velocities + forces + slippage
     # velocity = np.vstack(velocity)

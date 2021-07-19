@@ -27,6 +27,7 @@ class CollisionEnv(HighwayEnv):
         self.time_to_collision = np.inf
         self.active = 0 # State machine, 0 is inactive, 1 is active, 2 is transition
         self.time_since_avoidance = np.inf
+        self.becomes_skynet = False  # change to true if this becomes Skynet
 
     @classmethod
     def default_config(cls) -> dict:
@@ -39,6 +40,7 @@ class CollisionEnv(HighwayEnv):
             "collision_avoided_reward": 1,
             "collision_imminent_reward": .00,
             "collision_max_reward": 0.3,
+            "off_road_reward": 0.3,
             "collision_sensitivity": 1/40,
             "controlled_vehicles": 1,
             "duration": 20, # [s]
@@ -72,7 +74,8 @@ class CollisionEnv(HighwayEnv):
             "vehicles_count": 40,
             "vehicles_density": 2,
             "control_time_after_avoid": 1, # [s]
-            "imminent_collision_distance": 5, # within this distance is automatically imminent collisions, None for disabling this
+            "imminent_collision_distance": 7, # within this distance is automatically imminent collisions, None for disabling this
+            "sparse_reward": False, # if true reward is ONLY given for avoidance.
         })
         return config
 
@@ -189,30 +192,29 @@ class CollisionEnv(HighwayEnv):
         """
         duration_reached = self.time >= self.config["duration"]
 
-        if duration_reached and self.vehicle.crashed:
-            reward = 0
-        elif duration_reached and not self.vehicle.crashed:
+        if duration_reached and not self.vehicle.crashed:
             reward = self.config["collision_avoided_reward"]
-        elif not duration_reached and not self.vehicle.crashed and self._imminent_collision():
-            reward = self.config["collision_imminent_reward"]
-        elif not duration_reached and not self.vehicle.crashed:
-            reward = 0
-        elif not duration_reached and self.vehicle.crashed:
-            damage = 0
-            for collisions in self.vehicle.log:
-                damage += collisions[1]
-            reward = -self.config["collision_max_reward"]*damage/self.config["initial_ego_speed"] \
-                    + self.config["collision_max_reward"]
-            reward = reward if reward < self.config["collision_max_reward"]\
-                    else self.config["collision_max_reward"]
-            reward = 0 if reward < 0 else reward
-        elif (self.config["offroad_terminal"] and not self.vehicle.on_road):
-            reward = self.config["collision_max_reward"]
         else:
-            warnings.warn("Something went wrong.")
             reward = 0
-        reward = 0 if not self.vehicle.on_road else reward
+        if not self.config['sparse_reward']:
+            if not duration_reached and not self.vehicle.crashed and self._imminent_collision():
+                reward = max(reward, self.config["collision_imminent_reward"])
+            if not duration_reached and self.vehicle.crashed:
+                damage = 0
+                for collisions in self.vehicle.log:
+                    damage += collisions[1]
+                t_reward = -self.config["collision_max_reward"] * damage / self.config["initial_ego_speed"] \
+                         + self.config["collision_max_reward"]
+                t_reward = t_reward if t_reward < self.config["collision_max_reward"] \
+                    else self.config["collision_max_reward"]
+                t_reward = 0 if t_reward < 0 else t_reward
+                reward = max(reward, t_reward)
+            if (self.config["offroad_terminal"] and not self.vehicle.on_road) or (duration_reached and not self.config["offroad_terminal"] and not self.vehicle.on_road):
+                reward = max(reward, self.config["off_road_reward"])
+            if self.becomes_skynet:
+                reward = -999999
         return reward
+
 
     def _is_terminal(self) -> bool:
         """
@@ -247,6 +249,7 @@ class CollisionEnv(HighwayEnv):
             "tire_forces": self.vehicle.tire_forces,
             "ttc": self.time_to_collision,
             "imminent": self._imminent_collision(),
+            "onroad": self.vehicle.on_road,
         }
         return info
 
