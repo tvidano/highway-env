@@ -60,7 +60,7 @@ if __name__ == "__main__":
     totalruns = 100  # number of runs, obviously
     render_env = True  # whether to render the car
     report_every = 10  # how often to report running progress Ex. every 5th run
-    model_name = 'PPO'
+    model_name = 'A2C'
     do_training = False
 
     reward_stats = []
@@ -76,15 +76,21 @@ if __name__ == "__main__":
     elif model_name == 'PPO':
         model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048, batch_size=64, n_epochs=10,verbose=1)
         if do_training:
+            start = timeit.default_timer()
             model.learn(total_timesteps=10000, )
             model.save(model_name.lower() + "_collision")
+            stop = timeit.default_timer()
+            print("Training took", stop-start, "seconds.")
         model.load(model_name.lower() + "_collision")
 
     elif model_name == 'A2C':
         model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
         if do_training:
+            start = timeit.default_timer()
             model.learn(total_timesteps=10000, )
             model.save(model_name.lower() + "_collision")
+            stop = timeit.default_timer()
+            print("Training took", stop - start, "seconds.")
         model.load(model_name.lower() + "_collision")
 
 
@@ -147,7 +153,7 @@ if __name__ == "__main__":
         if report_every and i%report_every == 0:
             print(end_state)
             this_run = timeit.default_timer()
-            print('Average time per 1 simulation: ', (this_run - previous_run)/report_every)
+            print('Average time per 1 simulation: ', (this_run - previous_run)/report_every, "seconds.")
             previous_run = this_run
 
 
@@ -158,7 +164,7 @@ if __name__ == "__main__":
     print("Number of runs with crashes: ", num_crashed)
     print("Number of runs that ended offroad: ", num_offroad)
     print("Number of runs with collisions avoided: ", num_mitigated)
-    print("Success rate at avoiding collisions: ", num_mitigated/(num_crashed+num_mitigated+num_offroad), '%')
+    print("Success rate at avoiding collisions: ", num_mitigated/(num_crashed+num_mitigated+num_offroad)*100, '%')
 
     # Uncomment to see plots of velocities + forces + slippage
     # velocity = np.vstack(velocity)

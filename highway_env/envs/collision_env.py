@@ -27,7 +27,7 @@ class CollisionEnv(HighwayEnv):
         self.time_to_collision = np.inf
         self.active = 0 # State machine, 0 is inactive, 1 is active, 2 is transition
         self.time_since_avoidance = np.inf
-        self.becomes_skynet = False  # change to true if this becomes Skynet
+        self.becomes_skynet = False  # change to true if self becomes Skynet
 
     @classmethod
     def default_config(cls) -> dict:
@@ -66,20 +66,21 @@ class CollisionEnv(HighwayEnv):
             },
             "offroad_terminal": True,
             "policy_frequency": 15,  # [Hz]
-            "road_friction": 1.0, # Road-tire coefficient of friction (0,1]
+            "road_friction": 1.0,  # Road-tire coefficient of friction (0,1]
             "simulation_frequency": 15,  # [Hz]
             "stopping_vehicles_count": 2,
-            "time_after_collision": 0, # [s] for capturing rear-end collisions
-            "time_to_intervene": 5, # [s]
+            "time_after_collision": 0,  # [s] for capturing rear-end collisions
+            "time_to_intervene": 5,  # [s]
             "vehicles_count": 40,
             "vehicles_density": 2,
-            "control_time_after_avoid": 1, # [s]
-            "imminent_collision_distance": 7, # within this distance is automatically imminent collisions, None for disabling this
-            "sparse_reward": False, # if true reward is ONLY given for avoidance.
+            "control_time_after_avoid": 3,  # [s]
+            "imminent_collision_distance": 7,  # within this distance is automatically imminent collisions, None for disabling this
+            "sparse_reward": False,  # if true reward is ONLY given for avoidance.
         })
         return config
 
     def _create_vehicles(self) -> None:
+        self.active = 0
         """Create some new random vehicles of a given type, and add them on the road."""
         if self.config["controlled_vehicles"] > 1:
             raise ValueError(f'{self.config["controlled_vehicles"]} controlled vehicles set, but CollisionEnv uses only 1.')
@@ -129,19 +130,19 @@ class CollisionEnv(HighwayEnv):
         if self.road is None or self.vehicle is None:
             raise NotImplementedError("The road and vehicle must be initialized in the environment implementation")
 
-        if not self._imminent_collision():
-            action = np.array([0,0])
-
         if self.active == 0:
+            self.controlled_vehicles[0].color = (50, 200, 0)
             if self._imminent_collision():
-                self.active == 1
+                self.active = 1
             else:
                 action = np.array([0, 0])
         if self.active == 1:
+            self.controlled_vehicles[0].color = (200, 200, 0)
             if not self._imminent_collision():
                 self.active = 2
                 self.time_since_avoidance = self.time
         if self.active == 2:
+            self.controlled_vehicles[0].color = (255, 150, 0)
             if (self.time - self.time_since_avoidance) > self.config["control_time_after_avoid"]:
                 self.active = 0
 
