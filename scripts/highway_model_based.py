@@ -100,8 +100,11 @@ if __name__ == "__main__":
             # Use just hard braking (will probably lock the wheel):
             action = np.array([-1, 0.0])
 
-            # Uncomment to use RL algorithm actions:
-            action, _states = model.predict(obs)
+            if model:
+                action, _states = model.predict(obs)
+            else:
+                # Use just hard braking (will probably lock the wheel):
+                action = np.array([-1, 0.0])
 
             obs, rew, done, info = env.step(action)
             times.append(info["time"])

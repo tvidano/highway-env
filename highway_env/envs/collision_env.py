@@ -72,6 +72,7 @@ class CollisionEnv(HighwayEnv):
             "vehicles_count": 40,
             "vehicles_density": 2,
             "control_time_after_avoid": 1, # [s]
+            "imminent_collision_distance": 5, # within this distance is automatically imminent collisions, None for disabling this
         })
         return config
 
@@ -174,7 +175,10 @@ class CollisionEnv(HighwayEnv):
             return False
         relative_x_velocity = front_vehicle.velocity[0] - self.vehicle.velocity[0]
         self.time_to_collision = np.inf if relative_x_velocity >= 0 else (-relative_distance - self.vehicle.LENGTH)/ relative_x_velocity
-        return False if self.time_to_collision > self.config["time_to_intervene"] else True
+        if self.config["imminent_collision_distance"]:
+            return not self.time_to_collision > self.config["time_to_intervene"] or relative_distance < self.config["imminent_collision_distance"]
+        else:
+            return not self.time_to_collision > self.config["time_to_intervene"]
 
     def _reward(self, action: Action) -> float:
         """
@@ -202,6 +206,8 @@ class CollisionEnv(HighwayEnv):
             reward = reward if reward < self.config["collision_max_reward"]\
                     else self.config["collision_max_reward"]
             reward = 0 if reward < 0 else reward
+        elif (self.config["offroad_terminal"] and not self.vehicle.on_road):
+            reward = self.config["collision_max_reward"]
         else:
             warnings.warn("Something went wrong.")
             reward = 0
