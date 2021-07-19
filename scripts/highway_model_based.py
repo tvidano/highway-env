@@ -71,10 +71,11 @@ if __name__ == "__main__":
     # Uncomment to try training an PPO algorithm on this environemt:
     #model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,
                 #batch_size=64, n_epochs=10,verbose=1)
-    #model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
-    #model.learn(total_timesteps=50000, )
+    model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
+    #model.learn(total_timesteps=10000, )
     #model.save(model_name.lower() + "_collision")
-    #model.load(model_name.lower() + "_collision")
+    model.load(model_name.lower() + "_collision")
+
     print("Model", model_name, "trained/loaded")
 
     previous_run = timeit.default_timer()
@@ -100,7 +101,7 @@ if __name__ == "__main__":
             action = np.array([-1, 0.0])
 
             # Uncomment to use RL algorithm actions:
-            #action, _states = model.predict(obs)
+            action, _states = model.predict(obs)
 
             obs, rew, done, info = env.step(action)
             times.append(info["time"])
@@ -136,7 +137,7 @@ if __name__ == "__main__":
     print("Number of runs without intervention needed (dummy runs): ", num_no_interaction)
     print("Number of runs with crashes: ", num_crashed)
     print("Number of runs with collisions avoided: ", num_mitigated)
-    print("Success rate at avoiding collisions: ", num_mitigated/(num_crashed+num_mitigated), "seconds.")
+    print("Success rate at avoiding collisions: ", num_mitigated/(num_crashed+num_mitigated), '%')
 
     # Uncomment to see plots of velocities + forces + slippage
     # velocity = np.vstack(velocity)

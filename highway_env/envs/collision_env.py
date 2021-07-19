@@ -25,6 +25,8 @@ class CollisionEnv(HighwayEnv):
     def __init__(self, config: dict = None) -> None:
         super().__init__(config)
         self.time_to_collision = np.inf
+        self.active = 0 # State machine, 0 is inactive, 1 is active, 2 is transition
+        self.time_since_avoidance = np.inf
 
     @classmethod
     def default_config(cls) -> dict:
@@ -69,6 +71,7 @@ class CollisionEnv(HighwayEnv):
             "time_to_intervene": 5, # [s]
             "vehicles_count": 40,
             "vehicles_density": 2,
+            "control_time_after_avoid": 1, # [s]
         })
         return config
 
@@ -124,6 +127,20 @@ class CollisionEnv(HighwayEnv):
 
         if not self._imminent_collision():
             action = np.array([0,0])
+
+        if self.active == 0:
+            if self._imminent_collision():
+                self.active == 1
+            else:
+                action = np.array([0, 0])
+        if self.active == 1:
+            if not self._imminent_collision():
+                self.active = 2
+                self.time_since_avoidance = self.time
+        if self.active == 2:
+            if (self.time - self.time_since_avoidance) > self.config["control_time_after_avoid"]:
+                self.active = 0
+
         self.steps += 1
         self._simulate(action)
 
