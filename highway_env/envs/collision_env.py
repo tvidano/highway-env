@@ -27,6 +27,7 @@ class CollisionEnv(HighwayEnv):
         self.time_to_collision = np.inf
         self.active = 0 # State machine, 0 is inactive, 1 is active, 2 is transition
         self.time_since_avoidance = np.inf
+        self.becomes_skynet = False  # change to true if self becomes Skynet
 
     @classmethod
     def default_config(cls) -> dict:
@@ -39,6 +40,7 @@ class CollisionEnv(HighwayEnv):
             "collision_avoided_reward": 1,
             "collision_imminent_reward": .00,
             "collision_max_reward": 0.3,
+            "off_road_reward": 0.3,
             "collision_sensitivity": 1/40,
             "controlled_vehicles": 1,
             "duration": 20, # [s]
@@ -49,7 +51,8 @@ class CollisionEnv(HighwayEnv):
             "look_ahead_distance": 50, # [m]
             "observation": {
                 "type": "Kinematics",
-                "vehicles_count": 50,
+                "vehicles_count": 10,
+                "see_behind": False,
                 "features": ["presence", "x", "y", "vx", "vy"],
                 "features_range": {
                     "x": [-100, 100],
@@ -64,19 +67,21 @@ class CollisionEnv(HighwayEnv):
             },
             "offroad_terminal": True,
             "policy_frequency": 15,  # [Hz]
-            "road_friction": 1.0, # Road-tire coefficient of friction (0,1]
+            "road_friction": 1.0,  # Road-tire coefficient of friction (0,1]
             "simulation_frequency": 15,  # [Hz]
             "stopping_vehicles_count": 2,
-            "time_after_collision": 0, # [s] for capturing rear-end collisions
-            "time_to_intervene": 5, # [s]
+            "time_after_collision": 0,  # [s] for capturing rear-end collisions
+            "time_to_intervene": 5,  # [s]
             "vehicles_count": 40,
             "vehicles_density": 2,
-            "control_time_after_avoid": 1, # [s]
-            "imminent_collision_distance": 5, # within this distance is automatically imminent collisions, None for disabling this
+            "control_time_after_avoid": 3,  # [s]
+            "imminent_collision_distance": 7,  # within this distance is automatically imminent collisions, None for disabling this
+            "sparse_reward": False,  # if true reward is ONLY given for avoidance.
         })
         return config
 
     def _create_vehicles(self) -> None:
+        self.active = 0
         """Create some new random vehicles of a given type, and add them on the road."""
         if self.config["controlled_vehicles"] > 1:
             raise ValueError(f'{self.config["controlled_vehicles"]} controlled vehicles set, but CollisionEnv uses only 1.')
@@ -126,19 +131,23 @@ class CollisionEnv(HighwayEnv):
         if self.road is None or self.vehicle is None:
             raise NotImplementedError("The road and vehicle must be initialized in the environment implementation")
 
-        if not self._imminent_collision():
-            action = np.array([0,0])
-
+        #state machine for controlling whether the car is 'active' or not
+        GREEN = (50, 200, 0)
+        ORANGE = (255, 150, 0)
+        YELLOW = (200, 200, 0)
         if self.active == 0:
+            self.controlled_vehicles[0].color = GREEN
             if self._imminent_collision():
-                self.active == 1
+                self.active = 1
             else:
                 action = np.array([0, 0])
         if self.active == 1:
+            self.controlled_vehicles[0].color = YELLOW
             if not self._imminent_collision():
                 self.active = 2
                 self.time_since_avoidance = self.time
         if self.active == 2:
+            self.controlled_vehicles[0].color = ORANGE
             if (self.time - self.time_since_avoidance) > self.config["control_time_after_avoid"]:
                 self.active = 0
 
@@ -146,6 +155,8 @@ class CollisionEnv(HighwayEnv):
         self._simulate(action)
 
         obs = self.observation_type.observe()
+        obs += 1 if self.active == 2 or self.active == 1 else 0
+        obs += self.vehicle.lane_index[-1]
         reward = self._reward(action)
         terminal = self._is_terminal()
         info = self._info(obs, action)
@@ -189,30 +200,29 @@ class CollisionEnv(HighwayEnv):
         """
         duration_reached = self.time >= self.config["duration"]
 
-        if duration_reached and self.vehicle.crashed:
-            reward = 0
-        elif duration_reached and not self.vehicle.crashed:
+        if duration_reached and not self.vehicle.crashed:
             reward = self.config["collision_avoided_reward"]
-        elif not duration_reached and not self.vehicle.crashed and self._imminent_collision():
-            reward = self.config["collision_imminent_reward"]
-        elif not duration_reached and not self.vehicle.crashed:
-            reward = 0
-        elif not duration_reached and self.vehicle.crashed:
-            damage = 0
-            for collisions in self.vehicle.log:
-                damage += collisions[1]
-            reward = -self.config["collision_max_reward"]*damage/self.config["initial_ego_speed"] \
-                    + self.config["collision_max_reward"]
-            reward = reward if reward < self.config["collision_max_reward"]\
-                    else self.config["collision_max_reward"]
-            reward = 0 if reward < 0 else reward
-        elif (self.config["offroad_terminal"] and not self.vehicle.on_road):
-            reward = self.config["collision_max_reward"]
         else:
-            warnings.warn("Something went wrong.")
             reward = 0
-        reward = 0 if not self.vehicle.on_road else reward
+        if not self.config['sparse_reward']:
+            if not duration_reached and not self.vehicle.crashed and self._imminent_collision():
+                reward = max(reward, self.config["collision_imminent_reward"])
+            if not duration_reached and self.vehicle.crashed:
+                damage = 0
+                for collisions in self.vehicle.log:
+                    damage += collisions[1]
+                t_reward = -self.config["collision_max_reward"] * damage / self.config["initial_ego_speed"] \
+                         + self.config["collision_max_reward"]
+                t_reward = t_reward if t_reward < self.config["collision_max_reward"] \
+                    else self.config["collision_max_reward"]
+                t_reward = 0 if t_reward < 0 else t_reward
+                reward = max(reward, t_reward)
+            if (self.config["offroad_terminal"] and not self.vehicle.on_road) or (duration_reached and not self.config["offroad_terminal"] and not self.vehicle.on_road):
+                reward = max(reward, self.config["off_road_reward"])
+            if self.becomes_skynet:
+                reward = -999999
         return reward
+
 
     def _is_terminal(self) -> bool:
         """
@@ -247,6 +257,8 @@ class CollisionEnv(HighwayEnv):
             "tire_forces": self.vehicle.tire_forces,
             "ttc": self.time_to_collision,
             "imminent": self._imminent_collision(),
+            "onroad": self.vehicle.on_road,
+            "active": self.active,
         }
         return info
 
