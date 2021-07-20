@@ -218,7 +218,9 @@ class CoupledDynamics(Vehicle):
         self.is_braking = False
         self.is_steering = False
         self.delta = 0
-        self.d_delta_max = (np.pi/3) / 1 # able to sweep full steering in 1s
+        self.d_delta_max = (np.pi/3) / 2 # able to sweep full steering in 2s
+        self.torque = 0
+        self.actuators = np.array([0,self.delta]) # to record actual torque and steering angle
     
     @property
     def state(self) -> np.ndarray:
@@ -236,7 +238,7 @@ class CoupledDynamics(Vehicle):
             self.is_braking = False
         else:
             self.is_braking = True
-        n = 5
+        n = 10
         for _ in range(n):
             self.clip_actions(dt/n)
             self.longitudinal_velocity, self.front_wheel_angular_velocity =  \
@@ -269,6 +271,7 @@ class CoupledDynamics(Vehicle):
         self.tire_forces = np.array([*self.front_tire.get_forces(), *self.rear_tire.get_forces()])
         self.slip_values = np.array([self.compute_long_slip(self.state[[2,5],0]),
                                      *self.compute_lat_slip(*self.state[2:5])])
+        self.actuators = np.array([self.torque, self.delta])
         self.on_state_update()
 
     def long_dynamics(self, current_long_state: np.ndarray) -> np.ndarray:
@@ -286,7 +289,8 @@ class CoupledDynamics(Vehicle):
             front_torque = self.action["acceleration"]*self.max_engine_torque
             F_drag = 0 # assume driver maintains speed, negating drag.
             full_braking_compensation = 1
-        delta = self.action["steering"]
+        delta = self.delta
+        self.torque = front_torque
 
         assert((current_long_state.ndim == 1) & (current_long_state.size == 2))
         front_wheel_state = np.array(current_long_state[[0,1]])
@@ -365,10 +369,10 @@ class CoupledDynamics(Vehicle):
         self.action['steering'] = float(self.action['steering'])
         self.action['acceleration'] = float(self.action['acceleration'])
         # Impose actuator limits
-        self.action['steering'] = np.clip(self.action['steering'], -1, 1) * np.pi/6
-        self.delta = self.action['steering'] = np.clip(self.action['steering'], 
-                                                       self.delta - self.d_delta_max*dt,
-                                                       self.delta + self.d_delta_max*dt)
+        self.action['steering'] = np.clip(self.action['steering'], -1, 1)
+        self.delta = np.clip(self.action['steering'] * np.pi/6, 
+                             self.delta - self.d_delta_max*dt,
+                             self.delta + self.d_delta_max*dt)
         self.action['acceleration'] = np.clip(self.action['acceleration'], -1, 1)
     
     def set_friction(self, mu) -> None:

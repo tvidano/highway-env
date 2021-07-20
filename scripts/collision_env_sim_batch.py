@@ -15,7 +15,7 @@ from stable_baselines3 import A2C
 from stable_baselines3 import DDPG
 from stable_baselines3 import SAC
 from stable_baselines3 import TD3
-from sb3_contrib import TQC
+#from sb3_contrib import TQC
 from stable_baselines3.common.env_util import make_vec_env
 # torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
@@ -55,7 +55,7 @@ if __name__ == "__main__":
         "time_to_intervene": 4, # [s]
         "time_after_collision": 0, # [s]
         "vehicles_density": 2,
-        "vehicles_count": 40,
+        "vehicles_count": 20,
         "control_time_after_avoid": 1, #[s]
         "imminent_collision_distance": 7,  # [m] 
         "reward_type": "penalty"
@@ -69,10 +69,11 @@ if __name__ == "__main__":
     totalruns = 100  # number of runs, obviously
     render_env = True  # whether to render the car
     report_every = 10  # how often to report running progress Ex. every 5th run
-    do_training = True # whether to train a new model or use a saved one
-    model_name = 'TQC' # choose from:  'baseline' = deterministic hard braking, no steering always
-                                        #   'ppo' = implements trained PPO if available, otherwise trains a PPO
-                                        #   'a2c' = implements trained A2C if available, otherwise trains an A2C
+    do_training = False # whether to train a new model or use a saved one
+    model_name = 'baseline' # choose from:  'baseline' = deterministic hard braking, no steering always
+                                        #   'PPO' = implements trained PPO if available, otherwise trains a PPO
+                                        #   'A2C' = implements trained A2C if available, otherwise trains an A2C
+    debug = False # runs only 1 episode and plots outputs on baseline policy
     model_path = model_name.lower() + "_collision"
     modifier = ''
 
@@ -82,6 +83,10 @@ if __name__ == "__main__":
     num_no_interaction = 0
     num_offroad = 0
 
+    if debug:
+        model_name = 'baseline'
+        totalruns = 1
+        do_training = False
 
     if model_name == 'baseline':
         model = None
@@ -163,13 +168,16 @@ if __name__ == "__main__":
         obs = env.reset()
         if render_env:
             env.render()
-        times = []
-        model_params = []
+        if debug:
+            times = []
+            actions = []
+            actuators = []
+            model_params = []
+            velocity = []
+            forces = []
+            slips = []
+            ttc = []
         rewards = []
-        velocity = []
-        forces = []
-        slips = []
-        ttc = []
         info = None
         end_state = 'none'
         done = False
@@ -186,12 +194,15 @@ if __name__ == "__main__":
                     action = np.array([-1, 0.0])
 
             obs, rew, done, info = env.step(action)
-            times.append(info["time"])
-            velocity.append(info["speed"])
-            forces.append(info["tire_forces"])
-            slips.append(info["slip_values"])
-            ttc.append(info["ttc"])
             rewards.append(rew)
+            if debug: 
+                times.append(info["time"])
+                actions.append(info["action"])
+                actuators.append(info["actuators"])
+                velocity.append(info["speed"])
+                forces.append(info["tire_forces"])
+                slips.append(info["slip_values"])
+                ttc.append(info["ttc"])
 
             # check if crash has occured or collision has been detected
             if info["imminent"]:
@@ -225,31 +236,49 @@ if __name__ == "__main__":
     print(f"Collisions avoided:\t{num_mitigated}")
     print(f"Avoidance rate:\t\t{num_mitigated/(num_crashed+num_mitigated+num_offroad)*100}%")
 
-    # Uncomment to see plots of velocities + forces + slippage
-    # velocity = np.vstack(velocity)
-    # forces = np.vstack(forces)
-    # slips = np.vstack(slips)
-    # print(rewards)
-    # plt.figure()
-    # plt.subplot(231)
-    # plt.plot(times, velocity[:,0])
-    # plt.title('Long. Vel.')
-    # plt.subplot(232)
-    # plt.plot(times, velocity[:,2])
-    # plt.title('Front Omega')
-    # plt.subplot(233)
-    # plt.plot(times, forces[:,0])
-    # plt.title('Front Fx')
-    # plt.subplot(234)
-    # plt.plot(times, forces[:,1])
-    # plt.title('Front Fy')
-    # plt.subplot(235)
-    # plt.plot(times, slips[:,0])
-    # plt.title('Front kappa')
-    # plt.subplot(236)
-    # plt.plot(times, slips[:,1])
-    # plt.title('Front Alpha')
-    # plt.figure()
-    # plt.plot(times, ttc)
-    # plt.show()
+    if debug: 
+        velocity = np.vstack(velocity)
+        forces = np.vstack(forces)
+        slips = np.vstack(slips)
+        actions = np.vstack(actions)
+        actuators = np.vstack(actuators)
+        plt.figure()
+        plt.subplot(231)
+        plt.plot(times, velocity[:,0])
+        plt.title('Long. Vel.')
+        plt.subplot(232)
+        plt.plot(times, velocity[:,2])
+        plt.title('Front Omega')
+        plt.subplot(233)
+        plt.plot(times, forces[:,0])
+        plt.title('Front Fx')
+        plt.subplot(234)
+        plt.plot(times, forces[:,1])
+        plt.title('Front Fy')
+        plt.subplot(235)
+        plt.plot(times, slips[:,0])
+        plt.title('Front kappa')
+        plt.subplot(236)
+        plt.plot(times, slips[:,1])
+        plt.title('Front Alpha')
+        plt.figure()
+        plt.subplot(231)
+        plt.plot(times, ttc)
+        plt.title('Time to Collision')
+        plt.subplot(232)
+        plt.plot(times, actions[:,0])
+        plt.title('Throttle Action')
+        plt.subplot(233)
+        plt.plot(times, actions[:,1])
+        plt.title('Steering Action')
+        plt.subplot(234)
+        plt.plot(times, actuators[:, 0])
+        plt.title('Throttle Actuation')
+        plt.subplot(235)
+        plt.plot(times, actuators[:,1]*180/np.pi)
+        plt.title('Steering Actuation')
+        plt.subplot(236)
+        plt.plot(times, rewards)
+        plt.title('Rewards')
+        plt.show()
 

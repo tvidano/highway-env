@@ -275,6 +275,7 @@ class CollisionEnv(HighwayEnv):
         """
         info = {
             "action": action,
+            "actuators": self.vehicle.actuators,
             "crashed": self.vehicle.crashed,
             "slip_values": self.vehicle.slip_values,
             "speed": np.array([self.vehicle.longitudinal_velocity, 
