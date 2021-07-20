@@ -76,6 +76,7 @@ if __name__ == "__main__":
     debug = False # runs only 1 episode and plots outputs on baseline policy
     model_path = model_name.lower() + "_collision"
     modifier = ''
+    model_path += modifier
 
     reward_stats = []
     num_mitigated = 0
@@ -92,69 +93,69 @@ if __name__ == "__main__":
         model = None
 
     elif model_name == 'PPO':
-        model = PPO("MlpPolicy", env, learning_rate=0.003, n_steps=2048, batch_size=64, n_epochs=20,verbose=1)
+        model = PPO("MlpPolicy", env, learning_rate=0.003, n_steps=2048, batch_size=64, n_epochs=20,verbose=1, device='cuda')
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
+            model.learn(total_timesteps=500000, )
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop-start, "seconds.")
-        model.load(model_path+modifier)
+        model.load(model_path)
         print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path +".zip")}\n')
 
     elif model_name == 'A2C':
         model = A2C("MlpPolicy", env, learning_rate=0.003, n_steps=2048,verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
+            model.learn(total_timesteps=500000, )
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
-        model.load(model_path+modifier)
+        model.load(model_path)
         print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path +".zip")}\n')
 
     elif model_name == 'DDPG':
         model = DDPG("MlpPolicy", env, learning_rate=0.003, batch_size=100, verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
+            model.learn(total_timesteps=500000, )
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
-        model.load(model_path+modifier)
+        model.load(model_path)
         print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path + ".zip")}\n')
 
     elif model_name == 'SAC':
         model = SAC("MlpPolicy", env, learning_rate=0.003, batch_size=256, verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
+            model.learn(total_timesteps=500000, )
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
-        model.load(model_path+modifier)
+        model.load(model_path)
         print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path + ".zip")}\n')
 
     elif model_name == 'TD3':
         model = TD3("MlpPolicy", env, learning_rate=0.003, batch_size=100, verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
+            model.learn(total_timesteps=500000, )
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
-        model.load(model_path+modifier)
+        model.load(model_path)
         print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path + ".zip")}\n')
 
     elif model_name == 'TQC':
         model = TQC("MlpPolicy", env, learning_rate=0.003, batch_size=256, verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
+            model.learn(total_timesteps=500000, )
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
-        model.load(model_path+modifier)
+        model.load(model_path)
         print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path + ".zip")}\n')
 
     print("Model", model_name, "trained/loaded")

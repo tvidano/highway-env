@@ -51,7 +51,7 @@ class CollisionEnv(HighwayEnv):
             "look_ahead_distance": 50, # [m]
             "observation": {
                 "type": "Kinematics",
-                "vehicles_count": 10,
+                "vehicles_count": 15,
                 "see_behind": True,
                 "features": ["presence", "x", "y", "vx", "vy"],
                 # "features_range": {
