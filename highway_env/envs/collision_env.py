@@ -38,7 +38,7 @@ class CollisionEnv(HighwayEnv):
                 "vehicle_class": CoupledDynamics
             },
             "collision_avoided_reward": 1,
-            "collision_imminent_reward": .00,
+            "collision_imminent_reward": .05,
             "collision_max_reward": 0.3,
             "off_road_reward": 0.3,
             "collision_sensitivity": 1/40,
@@ -52,14 +52,14 @@ class CollisionEnv(HighwayEnv):
             "observation": {
                 "type": "Kinematics",
                 "vehicles_count": 10,
-                "see_behind": False,
+                "see_behind": True,
                 "features": ["presence", "x", "y", "vx", "vy"],
-                "features_range": {
-                    "x": [-100, 100],
-                    "y": [-100, 100],
-                    "vx": [-45, 45],
-                    "vy": [-20, 20]
-                },
+                # "features_range": {
+                #     "x": [-100, 100],
+                #     "y": [-100, 100],
+                #     "vx": [-45, 45],
+                #     "vy": [-20, 20]
+                # },
                 "absolute": False,
                 "order": "sorted",
                 "flatten": False,
@@ -75,8 +75,10 @@ class CollisionEnv(HighwayEnv):
             "vehicles_count": 40,
             "vehicles_density": 2,
             "control_time_after_avoid": 3,  # [s]
-            "imminent_collision_distance": 7,  # within this distance is automatically imminent collisions, None for disabling this
-            "sparse_reward": False,  # if true reward is ONLY given for avoidance.
+            "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
+            "reward_type": "sparse", # dense = reward is given on linear scale and for avoiding a collision.
+                                     # sparse = reward is given ONLY for avoidance.
+                                     # penalty = reward given for avoiding a collision, penalty given for collision
         })
         return config
 
@@ -135,6 +137,7 @@ class CollisionEnv(HighwayEnv):
         GREEN = (50, 200, 0)
         ORANGE = (255, 150, 0)
         YELLOW = (200, 200, 0)
+        RED = (255, 100, 100)
         if self.active == 0:
             self.controlled_vehicles[0].color = GREEN
             if self._imminent_collision():
@@ -146,9 +149,15 @@ class CollisionEnv(HighwayEnv):
             if not self._imminent_collision():
                 self.active = 2
                 self.time_since_avoidance = self.time
+            if self.vehicle.crashed:
+                self.controlled_vehicles[0].color = RED
+                self.active = 0
         if self.active == 2:
             self.controlled_vehicles[0].color = ORANGE
             if (self.time - self.time_since_avoidance) > self.config["control_time_after_avoid"]:
+                self.active = 0
+            if self.vehicle.crashed:
+                self.controlled_vehicles[0].color = RED
                 self.active = 0
 
         self.steps += 1
@@ -198,29 +207,47 @@ class CollisionEnv(HighwayEnv):
         :param action: the last action performed
         :return: the corresponding reward
         """
-        duration_reached = self.time >= self.config["duration"]
-
-        if duration_reached and not self.vehicle.crashed:
-            reward = self.config["collision_avoided_reward"]
+        reward = 0
+        avoidance_rew = imminent_collision_rew = damage_mitigation_rew \
+            = survival_rew = offroad_rew = collision_pen = offroad_pen = False
+        if self.config['reward_type'] == 'sparse':
+            avoidance_rew = True
+        elif self.config['reward_type'] == 'dense':
+            imminent_collision_rew = damage_mitigation_rew = survival_rew = True
+        elif self.config['reward_type'] == 'penalty':
+            avoidance_rew = collision_pen = offroad_pen = True
         else:
-            reward = 0
-        if not self.config['sparse_reward']:
-            if not duration_reached and not self.vehicle.crashed and self._imminent_collision():
-                reward = max(reward, self.config["collision_imminent_reward"])
+            raise(NotImplementedError, f'{self.config["reward_type"]} reward type not implemented or misstyped.')
+        
+        duration_reached = self.time >= self.config["duration"]
+        if avoidance_rew:
+            reward += self.config["collision_avoided_reward"] if duration_reached and not self.vehicle.crashed else 0
+        if imminent_collision_rew:
+            reward += self.config["collision_imminent_reward"] if self.active != 0 else 0
+        if damage_mitigation_rew:
             if not duration_reached and self.vehicle.crashed:
                 damage = 0
                 for collisions in self.vehicle.log:
                     damage += collisions[1]
-                t_reward = -self.config["collision_max_reward"] * damage / self.config["initial_ego_speed"] \
-                         + self.config["collision_max_reward"]
-                t_reward = t_reward if t_reward < self.config["collision_max_reward"] \
-                    else self.config["collision_max_reward"]
-                t_reward = 0 if t_reward < 0 else t_reward
-                reward = max(reward, t_reward)
-            if (self.config["offroad_terminal"] and not self.vehicle.on_road) or (duration_reached and not self.config["offroad_terminal"] and not self.vehicle.on_road):
-                reward = max(reward, self.config["off_road_reward"])
-            if self.becomes_skynet:
-                reward = -999999
+                mitigation_reward = self.config["collision_max_reward"] \
+                           - self.config["collision_max_reward"] * damage / self.config["initial_ego_speed"]
+                mitigation_reward = np.clip(mitigation_reward, 0, self.config["collision_max_reward"])
+                reward += mitigation_reward
+        if survival_rew:
+            reward += self.config["collision_avoided_reward"] if duration_reached and not self.vehicle.crashed else 0
+        if offroad_rew:
+            if not self.config["offroad_terminal"]:
+                print('Using a penalty for going offroad, but not ending episode when going offroad. Is this intended?')
+            reward -= self.config["off_road_reward"] if not self.vehicle.on_road and duration_reached else 0
+        
+        if collision_pen:
+            reward -= self.config["collision_max_reward"] if self.vehicle.crashed else 0
+        if offroad_pen:
+            if not self.config["offroad_terminal"]:
+                print('Using a penalty for going offroad, but not ending episode when going offroad. Is this intended?')
+            reward -= self.config["off_road_reward"] if not self.vehicle.on_road and duration_reached else 0
+        if self.becomes_skynet:
+            reward = -999999
         return reward
 
 

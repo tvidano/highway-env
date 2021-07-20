@@ -250,8 +250,13 @@ class CoupledDynamics(Vehicle):
         c, s = np.cos(self.heading), np.sin(self.heading)
         R = np.array(((c, -s), (s, c)))
         velocity = R @ np.array([self.longitudinal_velocity, self.lateral_velocity])
-        self.position[0] += velocity[0]*dt
-        self.position[1] += velocity[1]*dt
+        if self.impact is not None:
+            self.position += self.impact
+            self.crashed = True
+            self.impact = None
+        else:
+            self.position[0] += velocity[0]*dt
+            self.position[1] += velocity[1]*dt
 
         self.front_tire.state = np.array([self.compute_long_slip(self.state[[2,5],0]),
                                           self.compute_lat_slip(*self.state[[2,3,4],0])[0],
