@@ -60,8 +60,8 @@ if __name__ == "__main__":
     totalruns = 100  # number of runs, obviously
     render_env = True  # whether to render the car
     report_every = 10  # how often to report running progress Ex. every 5th run
-    model_name = 'A2C'
-    do_training = False
+    model_name = 'PPO'
+    do_training = True
 
     reward_stats = []
     num_mitigated = 0
@@ -74,10 +74,10 @@ if __name__ == "__main__":
         model = None
 
     elif model_name == 'PPO':
-        model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048, batch_size=64, n_epochs=10,verbose=1)
+        model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048, batch_size=64, n_epochs=20,verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=10000, )
+            model.learn(total_timesteps=50000, )
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop-start, "seconds.")
@@ -87,7 +87,7 @@ if __name__ == "__main__":
         model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=10000, )
+            model.learn(total_timesteps=50000, )
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
@@ -113,17 +113,19 @@ if __name__ == "__main__":
         forces = []
         slips = []
         ttc = []
+        info = None
         end_state = 'none'
         done = False
         while not done:
-            # Use just hard braking (will probably lock the wheel):
-            action = np.array([-1, 0.0])
 
             if model:
                 action, _states = model.predict(obs)
             else:
                 # Use just hard braking (will probably lock the wheel):
-                action = np.array([-1, 0.0])
+                if info and info['active'] == 2:
+                    action = np.array([0.0, 0.0])
+                else:
+                    action = np.array([-1, 0.0])
 
             obs, rew, done, info = env.step(action)
             times.append(info["time"])

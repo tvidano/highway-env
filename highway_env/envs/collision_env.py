@@ -51,7 +51,7 @@ class CollisionEnv(HighwayEnv):
             "look_ahead_distance": 50, # [m]
             "observation": {
                 "type": "Kinematics",
-                "vehicles_count": 50,
+                "vehicles_count": 10,
                 "see_behind": False,
                 "features": ["presence", "x", "y", "vx", "vy"],
                 "features_range": {
@@ -155,6 +155,8 @@ class CollisionEnv(HighwayEnv):
         self._simulate(action)
 
         obs = self.observation_type.observe()
+        obs += 1 if self.active == 2 or self.active == 1 else 0
+        obs += self.vehicle.lane_index[-1]
         reward = self._reward(action)
         terminal = self._is_terminal()
         info = self._info(obs, action)
@@ -256,6 +258,7 @@ class CollisionEnv(HighwayEnv):
             "ttc": self.time_to_collision,
             "imminent": self._imminent_collision(),
             "onroad": self.vehicle.on_road,
+            "active": self.active,
         }
         return info
 
