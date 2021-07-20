@@ -52,7 +52,7 @@ class CollisionEnv(HighwayEnv):
             "observation": {
                 "type": "Kinematics",
                 "vehicles_count": 10,
-                "see_behind": False,
+                "see_behind": True,
                 "features": ["presence", "x", "y", "vx", "vy"],
                 "features_range": {
                     "x": [-100, 100],
@@ -76,7 +76,7 @@ class CollisionEnv(HighwayEnv):
             "vehicles_density": 2,
             "control_time_after_avoid": 3,  # [s]
             "imminent_collision_distance": 7,  # within this distance is automatically imminent collisions, None for disabling this
-            "sparse_reward": False,  # if true reward is ONLY given for avoidance.
+            "sparse_reward": True,  # if true reward is ONLY given for avoidance.
         })
         return config
 
@@ -155,8 +155,8 @@ class CollisionEnv(HighwayEnv):
         self._simulate(action)
 
         obs = self.observation_type.observe()
-        obs += 1 if self.active == 2 or self.active == 1 else 0
-        obs += self.vehicle.lane_index[-1]
+        #obs += 1 if self.active == 2 or self.active == 1 else 0
+        #obs += self.vehicle.lane_index[-1]
         reward = self._reward(action)
         terminal = self._is_terminal()
         info = self._info(obs, action)
