@@ -26,13 +26,14 @@ import base64
 
 # IO
 from pathlib import Path
+import os
 import time
 
 if 'highway_env' not in sys.modules:
     try:
         import highway_env
     except ImportError:
-        sys.path.append(r'..')
+        sys.path.append(os.getcwd())
         import highway_env
 
 # ==================================
