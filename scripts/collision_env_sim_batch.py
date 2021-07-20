@@ -86,10 +86,8 @@ if __name__ == "__main__":
             print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path +".zip")}\n')
         except FileNotFoundError:
             print(f'Unable to find {os.path.join(os.getcwd(),model_path)} training new model...\n')
-            #model.learn(total_timesteps=10000, )   
-            #model.save(model_name.lower() + "_collision")
-
-    #print("Model", model_name, "trained/loaded")
+            model.learn(total_timesteps=10000, )   
+            model.save(model_name.lower() + "_collision")
 
     previous_run = timeit.default_timer()
     for i in range(totalruns):
