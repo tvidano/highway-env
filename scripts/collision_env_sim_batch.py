@@ -44,15 +44,18 @@ if __name__ == "__main__":
     env = highway_env.envs.collision_env.CollisionEnv()
 
     # Recommended Environment Hypertuning Parameters:
-    # env.configure({
-    #     "duration": 10,  # [s]
-    #     "road_friction": 1.0,
-    #     "stopping_vehicles_count": 5,
-    #     "time_to_intervene": 2, # [s]
-    #     "time_after_collision": 0, # [s]
-    #     "vehicles_density": 2,
-    #     "vehicles_count": 20,
-    # })
+    env.configure({
+        "duration": 8,  # [s]
+        "road_friction": 1.0,
+        "stopping_vehicles_count": 5,
+        "time_to_intervene": 4, # [s]
+        "time_after_collision": 0, # [s]
+        "vehicles_density": 2,
+        "vehicles_count": 40,
+        "control_time_after_avoid": 1, #[s]
+        "imminent_collision_distance": 7,  # [m] 
+        "reward_type": "penalty"
+    })
 
     # Uncomment to check environment with OpenAi Gym:
     # check_env(env)
@@ -62,10 +65,11 @@ if __name__ == "__main__":
     totalruns = 10  # number of runs, obviously
     render_env = True  # whether to render the car
     report_every = 10  # how often to report running progress Ex. every 5th run
-    do_training = True # whether to train a new model or use a saved one
-    model_name = 'ppo' # choose from:  'baseline' = deterministic hard braking, no steering always
-                                        #   'ppo' = implements trained PPO if available, otherwise trains a PPO
-                                        #   'a2c' = implements trained A2C if available, otherwise trains an A2C
+    do_training = False # whether to train a new model or use a saved one
+    model_name = 'baseline' # choose from:  
+                                # 'baseline' = deterministic hard braking, no steering always
+                                # 'ppo' = implements trained PPO if available, otherwise trains a PPO
+                                # 'a2c' = implements trained A2C if available, otherwise trains an A2C
     model_path = model_name.lower() + "_collision"
 
     reward_stats = []
@@ -166,14 +170,14 @@ if __name__ == "__main__":
             previous_run = this_run
 
 
-    print("Using: ", model_name)
-    print("Total runs: ", totalruns)
-    print("Average reward: ", sum(reward_stats)/len(reward_stats))
-    print("Number of runs without intervention needed (dummy runs): ", num_no_interaction)
-    print("Number of runs with crashes: ", num_crashed)
-    print("Number of runs that ended offroad: ", num_offroad)
-    print("Number of runs with collisions avoided: ", num_mitigated)
-    print("Success rate at avoiding collisions: ", num_mitigated/(num_crashed+num_mitigated+num_offroad)*100, '%')
+    print(f"Using:\t\t\t{model_name}")
+    print(f"Episodes:\t\t{totalruns}")
+    print(f"Average reward:\t\t{sum(reward_stats)/len(reward_stats)}")
+    print(f"Dummy Episodes:\t\t{num_no_interaction}") # Episodes where no engagements occur
+    print(f"Crashes:\t\t{num_crashed}")
+    print(f"Offroad:\t\t{num_offroad}")
+    print(f"Collisions avoided:\t{num_mitigated}")
+    print(f"Avoidance rate:\t\t{num_mitigated/(num_crashed+num_mitigated+num_offroad)*100}%")
 
     # Uncomment to see plots of velocities + forces + slippage
     # velocity = np.vstack(velocity)
