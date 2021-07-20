@@ -164,8 +164,8 @@ class CollisionEnv(HighwayEnv):
         self._simulate(action)
 
         obs = self.observation_type.observe()
-        obs += 1 if self.active == 2 or self.active == 1 else 0
-        obs += self.vehicle.lane_index[-1]
+        #obs += 1 if self.active == 2 or self.active == 1 else 0
+        #obs += self.vehicle.lane_index[-1]
         reward = self._reward(action)
         terminal = self._is_terminal()
         info = self._info(obs, action)
