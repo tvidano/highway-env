@@ -176,11 +176,6 @@ class VehicleGraphics(object):
             color = cls.BLUE
         elif isinstance(vehicle, MDPVehicle):
             color = cls.EGO_COLOR
-        elif isinstance(vehicle, CoupledDynamics):
-            if (vehicle.action['acceleration'] != 0.0) or (vehicle.action['steering'] != 0.0):
-                color = cls.YELLOW
-            else:
-                color = cls.GREEN
         if transparent:
             color = (color[0], color[1], color[2], 30)
         return color
