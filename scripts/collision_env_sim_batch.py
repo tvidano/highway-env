@@ -26,13 +26,14 @@ import base64
 
 # IO
 from pathlib import Path
+import os
 import time
 
 if 'highway_env' not in sys.modules:
     try:
         import highway_env
     except ImportError:
-        sys.path.append(r'..')
+        sys.path.append(os.getcwd())
         import highway_env
 
 # ==================================
@@ -57,10 +58,10 @@ if __name__ == "__main__":
     # check_env(env)
 
     # Statistics portion
-    totalruns = 100  # number of runs, obviously
+    totalruns = 10  # number of runs, obviously
     render_env = True  # whether to render the car
     report_every = 10  # how often to report running progress Ex. every 5th run
-    model_name = 'PPO'
+    model_name = 'default'
     do_training = True
 
     reward_stats = []
