@@ -57,27 +57,39 @@ if __name__ == "__main__":
     # Uncomment to check environment with OpenAi Gym:
     # check_env(env)
 
-    # Statistics portion
+    # Batch simulation parameters
     totalruns = 100  # number of runs, obviously
     render_env = True  # whether to render the car
     report_every = 10  # how often to report running progress Ex. every 5th run
-    model_name = 'default'
+    model_name = 'ppo' # choose from:  'baseline' = deterministic hard braking, no steering always
+                                        #   'ppo' = implements trained PPO if available, otherwise trains a PPO
+                                        #   'a2c' = implements trained A2C if available, otherwise trains an A2C
+    model_path = model_name.lower() + "_collision"
 
+    # Statistics portion
     reward_stats = []
     num_mitigated = 0
     num_crashed = 0
     num_no_interaction = 0
 
+    if model_name == 'baseline':
+        model = None
+    else:
+        if model_name == 'ppo':
+            model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,
+                        batch_size=64, n_epochs=10,verbose=1)
+        elif model_name == 'a2c':
+            model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
 
-    # Uncomment to try training an PPO algorithm on this environemt:
-    #model = PPO("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,
-                #batch_size=64, n_epochs=10,verbose=1)
-    model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
-    #model.learn(total_timesteps=10000, )
-    #model.save(model_name.lower() + "_collision")
-    model.load(model_name.lower() + "_collision")
+        try:
+            model.load(model_path)
+            print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path +".zip")}\n')
+        except FileNotFoundError:
+            print(f'Unable to find {os.path.join(os.getcwd(),model_path)} training new model...\n')
+            #model.learn(total_timesteps=10000, )   
+            #model.save(model_name.lower() + "_collision")
 
-    print("Model", model_name, "trained/loaded")
+    #print("Model", model_name, "trained/loaded")
 
     previous_run = timeit.default_timer()
     for i in range(totalruns):
@@ -98,9 +110,6 @@ if __name__ == "__main__":
         end_state = 'none'
         done = False
         while not done:
-            # Use just hard braking (will probably lock the wheel):
-            action = np.array([-1, 0.0])
-
             if model:
                 action, _states = model.predict(obs)
             else:
