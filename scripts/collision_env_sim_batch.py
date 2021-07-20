@@ -57,12 +57,16 @@ if __name__ == "__main__":
     # Uncomment to check environment with OpenAi Gym:
     # check_env(env)
 
-    # Statistics portion
+
+    # Batch simulation parameters
     totalruns = 10  # number of runs, obviously
     render_env = True  # whether to render the car
     report_every = 10  # how often to report running progress Ex. every 5th run
-    model_name = 'default'
-    do_training = True
+    do_training = True # whether to train a new model or use a saved one
+    model_name = 'ppo' # choose from:  'baseline' = deterministic hard braking, no steering always
+                                        #   'ppo' = implements trained PPO if available, otherwise trains a PPO
+                                        #   'a2c' = implements trained A2C if available, otherwise trains an A2C
+    model_path = model_name.lower() + "_collision"
 
     reward_stats = []
     num_mitigated = 0
@@ -71,7 +75,7 @@ if __name__ == "__main__":
     num_offroad = 0
 
 
-    if model_name == 'default':
+    if model_name == 'baseline':
         model = None
 
     elif model_name == 'PPO':
@@ -82,7 +86,8 @@ if __name__ == "__main__":
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop-start, "seconds.")
-        model.load(model_name.lower() + "_collision")
+        model.load(model_path)
+        print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path +".zip")}\n')
 
     elif model_name == 'A2C':
         model = A2C("MlpPolicy", env, learning_rate=0.0003, n_steps=2048,verbose=1)
@@ -92,7 +97,8 @@ if __name__ == "__main__":
             model.save(model_name.lower() + "_collision")
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
-        model.load(model_name.lower() + "_collision")
+        model.load(model_path)
+        print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path +".zip")}\n')
 
 
 
@@ -118,11 +124,12 @@ if __name__ == "__main__":
         end_state = 'none'
         done = False
         while not done:
-
+          
             if model:
                 action, _states = model.predict(obs)
             else:
                 # Use just hard braking (will probably lock the wheel):
+
                 if info and info['active'] == 2:
                     action = np.array([0.0, 0.0])
                 else:
@@ -151,7 +158,6 @@ if __name__ == "__main__":
         num_crashed += end_state == 'crashed'
         num_mitigated += end_state == 'mitigated'
         num_offroad += end_state == 'offroad'
-
 
         if report_every and i%report_every == 0:
             print(end_state)
