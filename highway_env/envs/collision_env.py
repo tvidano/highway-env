@@ -41,7 +41,9 @@ class CollisionEnv(HighwayEnv):
             "collision_avoided_reward": 1,
             "collision_imminent_reward": .05,
             "collision_max_reward": 0.3,
+            "collision_penalty": 1,
             "off_road_reward": 0.3,
+            "off_road_penalty": 1,
             "collision_sensitivity": 1/40,
             "controlled_vehicles": 1,
             "duration": 20, # [s]
@@ -80,6 +82,7 @@ class CollisionEnv(HighwayEnv):
             "reward_type": "sparse", # dense = reward is given on linear scale and for avoiding a collision.
                                      # sparse = reward is given ONLY for avoidance.
                                      # penalty = reward given for avoiding a collision, penalty given for collision
+                                     # penalty_dense = reward for avoiding collision, penalize based on energy of crash and offroad
         })
         return config
 
@@ -138,7 +141,7 @@ class CollisionEnv(HighwayEnv):
             # spin simulation
             self.steps += 1
             self._simulate(np.array([0, 0]))
-            print("looping")
+            #print("looping")
 
             if self._is_terminal():
                 if self.did_run:
@@ -153,6 +156,7 @@ class CollisionEnv(HighwayEnv):
 
                     return obs, reward, terminal, info
                 else:
+                    print('Dummy run...')
                     self.__init__(self.config)
 
         else:
@@ -240,13 +244,15 @@ class CollisionEnv(HighwayEnv):
         """
         reward = 0
         avoidance_rew = imminent_collision_rew = damage_mitigation_rew \
-            = survival_rew = offroad_rew = collision_pen = offroad_pen = False
+            = survival_rew = offroad_rew = collision_pen = offroad_pen = damage_pen = False
         if self.config['reward_type'] == 'sparse':
             avoidance_rew = True
         elif self.config['reward_type'] == 'dense':
             imminent_collision_rew = damage_mitigation_rew = survival_rew = True
         elif self.config['reward_type'] == 'penalty':
             avoidance_rew = collision_pen = offroad_pen = True
+        elif self.config['reward_type'] == 'penalty_dense':
+            avoidance_rew = damage_pen = True
         else:
             raise(NotImplementedError, f'{self.config["reward_type"]} reward type not implemented or misstyped.')
         
@@ -269,14 +275,28 @@ class CollisionEnv(HighwayEnv):
         if offroad_rew:
             if not self.config["offroad_terminal"]:
                 print('Using a penalty for going offroad, but not ending episode when going offroad. Is this intended?')
-            reward += self.config["off_road_reward"] if not self.vehicle.on_road and duration_reached else 0
+            reward += self.config["off_road_reward"] if not self.vehicle.on_road else 0
         
         if collision_pen:
-            reward -= self.config["collision_max_reward"] if self.vehicle.crashed else 0
+            reward -= self.config["collision_penalty"] if self.vehicle.crashed else 0
         if offroad_pen:
             if not self.config["offroad_terminal"]:
                 print('Using a penalty for going offroad, but not ending episode when going offroad. Is this intended?')
-            reward -= self.config["off_road_reward"] if not self.vehicle.on_road and duration_reached else 0
+            reward -= self.config["off_road_penalty"] if not self.vehicle.on_road else 0
+        if damage_pen:
+            damage = 0
+            max_damage = 1/2*self.vehicle.mass*self.config["initial_ego_speed"]**2
+            if not self.vehicle.on_road:
+                damage = 1/2*self.vehicle.mass*np.linalg.norm(self.vehicle.state[[2,3], 0])**2
+                damage = damage / max_damage
+            if self.vehicle.crashed:
+                for collisions in self.vehicle.log:
+                    v1 = collisions[0].speed
+                    v2 = np.linalg.norm(self.vehicle.state[[2,3], 0])
+                    Ei = 1/2*self.vehicle.mass*(v1**2 + v2**2)
+                    Ef = self.vehicle.mass*(v1/2 + v2/2)**2
+                    damage += (Ei - Ef) / max_damage
+            reward -= damage
         if self.becomes_skynet:
             reward = -999999
         return reward
