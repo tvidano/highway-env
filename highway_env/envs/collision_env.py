@@ -28,6 +28,7 @@ class CollisionEnv(HighwayEnv):
         self.active = 0 # State machine, 0 is inactive, 1 is active, 2 is transition
         self.time_since_avoidance = np.inf
         self.becomes_skynet = False  # change to true if self becomes Skynet
+        self.did_run = False
 
     @classmethod
     def default_config(cls) -> dict:
@@ -62,7 +63,7 @@ class CollisionEnv(HighwayEnv):
                 # },
                 "absolute": False,
                 "order": "sorted",
-                "flatten": False,
+                "flatten": True,
                 "observe_intentions": False,
             },
             "offroad_terminal": True,
@@ -133,38 +134,41 @@ class CollisionEnv(HighwayEnv):
         if self.road is None or self.vehicle is None:
             raise NotImplementedError("The road and vehicle must be initialized in the environment implementation")
 
-        #state machine for controlling whether the car is 'active' or not
-        GREEN = (50, 200, 0)
-        ORANGE = (255, 150, 0)
-        YELLOW = (200, 200, 0)
-        RED = (255, 100, 100)
-        if self.active == 0:
-            self.controlled_vehicles[0].color = GREEN
-            if self._imminent_collision():
-                self.active = 1
-            else:
-                action = np.array([0, 0])
-        if self.active == 1:
-            self.controlled_vehicles[0].color = YELLOW
-            if not self._imminent_collision():
-                self.active = 2
-                self.time_since_avoidance = self.time
-            if self.vehicle.crashed:
-                self.controlled_vehicles[0].color = RED
-                self.active = 0
-        if self.active == 2:
-            self.controlled_vehicles[0].color = ORANGE
-            if (self.time - self.time_since_avoidance) > self.config["control_time_after_avoid"]:
-                self.active = 0
-            if self.vehicle.crashed:
-                self.controlled_vehicles[0].color = RED
-                self.active = 0
+        while self._update_state() == 0:
+            # spin simulation
+            self.steps += 1
+            self._simulate(np.array([0, 0]))
+            print("looping")
+
+            if self._is_terminal():
+                if self.did_run:
+                    obs = self.observation_type.observe()
+                    # obs += 1 if self.active == 2 or self.active == 1 else 0
+                    # obs += self.vehicle.position[0]
+                    # obs += self.vehicle.position[1]
+                    # obs += self.vehicle.lane_index[-1]
+                    reward = self._reward(action)
+                    terminal = self._is_terminal()
+                    info = self._info(obs, action)
+
+                    return obs, reward, terminal, info
+                else:
+                    self.__init__(self.config)
+
+        else:
+            # if self.did_run = False:
+            # self.time = 0 <-- this could start the time at when the active starts
+            self.did_run = True
+
+
 
         self.steps += 1
         self._simulate(action)
 
         obs = self.observation_type.observe()
         #obs += 1 if self.active == 2 or self.active == 1 else 0
+        #obs += self.vehicle.position[0]
+        #obs += self.vehicle.position[1]
         #obs += self.vehicle.lane_index[-1]
         reward = self._reward(action)
         terminal = self._is_terminal()
@@ -199,6 +203,33 @@ class CollisionEnv(HighwayEnv):
             return not self.time_to_collision > self.config["time_to_intervene"] or relative_distance < self.config["imminent_collision_distance"]
         else:
             return not self.time_to_collision > self.config["time_to_intervene"]
+
+    def _update_state(self):
+        #state machine for controlling whether the car is 'active' or not
+        GREEN = (50, 200, 0)
+        ORANGE = (255, 150, 0)
+        YELLOW = (200, 200, 0)
+        RED = (255, 100, 100)
+        if self.active == 0:
+            self.controlled_vehicles[0].color = GREEN
+            if self._imminent_collision():
+                self.active = 1
+        if self.active == 1:
+            self.controlled_vehicles[0].color = YELLOW
+            if not self._imminent_collision():
+                self.active = 2
+                self.time_since_avoidance = self.time
+            if self.vehicle.crashed:
+                self.controlled_vehicles[0].color = RED
+                self.active = 0
+        if self.active == 2:
+            self.controlled_vehicles[0].color = ORANGE
+            if (self.time - self.time_since_avoidance) > self.config["control_time_after_avoid"]:
+                self.active = 0
+            if self.vehicle.crashed:
+                self.controlled_vehicles[0].color = RED
+                self.active = 0
+        return self.active
 
     def _reward(self, action: Action) -> float:
         """
@@ -238,7 +269,7 @@ class CollisionEnv(HighwayEnv):
         if offroad_rew:
             if not self.config["offroad_terminal"]:
                 print('Using a penalty for going offroad, but not ending episode when going offroad. Is this intended?')
-            reward -= self.config["off_road_reward"] if not self.vehicle.on_road and duration_reached else 0
+            reward += self.config["off_road_reward"] if not self.vehicle.on_road and duration_reached else 0
         
         if collision_pen:
             reward -= self.config["collision_max_reward"] if self.vehicle.crashed else 0

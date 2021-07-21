@@ -15,7 +15,7 @@ from stable_baselines3 import A2C
 from stable_baselines3 import DDPG
 from stable_baselines3 import SAC
 from stable_baselines3 import TD3
-#from sb3_contrib import TQC
+from sb3_contrib import TQC
 from stable_baselines3.common.env_util import make_vec_env
 # torch.set_default_tensor_type("torch.cuda.FloatTensor")
 
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         "vehicles_count": 20,
         "control_time_after_avoid": 1, #[s]
         "imminent_collision_distance": 7,  # [m] 
-        "reward_type": "penalty"
+        "reward_type": "sparse"
     })
 
     # Uncomment to check environment with OpenAi Gym:
@@ -74,6 +74,7 @@ if __name__ == "__main__":
                                         #   'PPO' = implements trained PPO if available, otherwise trains a PPO
                                         #   'A2C' = implements trained A2C if available, otherwise trains an A2C
     debug = False # runs only 1 episode and plots outputs on baseline policy
+
     model_path = model_name.lower() + "_collision"
     modifier = ''
     model_path += modifier
@@ -96,8 +97,8 @@ if __name__ == "__main__":
         model = PPO("MlpPolicy", env, learning_rate=0.003, n_steps=2048, batch_size=64, n_epochs=20,verbose=1, device='cuda')
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=500000, )
-            model.save(model_name.lower() + "_collision")
+            model.learn(total_timesteps=50000, )
+            model.save(model_path)
             stop = timeit.default_timer()
             print("Training took", stop-start, "seconds.")
         model.load(model_path)
@@ -107,8 +108,8 @@ if __name__ == "__main__":
         model = A2C("MlpPolicy", env, learning_rate=0.003, n_steps=2048,verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=500000, )
-            model.save(model_name.lower() + "_collision")
+            model.learn(total_timesteps=50000, )
+            model.save(model_path)
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
         model.load(model_path)
@@ -118,8 +119,8 @@ if __name__ == "__main__":
         model = DDPG("MlpPolicy", env, learning_rate=0.003, batch_size=100, verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=500000, )
-            model.save(model_name.lower() + "_collision")
+            model.learn(total_timesteps=50000, )
+            model.save(model_path)
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
         model.load(model_path)
@@ -129,8 +130,8 @@ if __name__ == "__main__":
         model = SAC("MlpPolicy", env, learning_rate=0.003, batch_size=256, verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=500000, )
-            model.save(model_name.lower() + "_collision")
+            model.learn(total_timesteps=50000, )
+            model.save(model_path)
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
         model.load(model_path)
@@ -140,8 +141,8 @@ if __name__ == "__main__":
         model = TD3("MlpPolicy", env, learning_rate=0.003, batch_size=100, verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=500000, )
-            model.save(model_name.lower() + "_collision")
+            model.learn(total_timesteps=50000, )
+            model.save(model_path)
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
         model.load(model_path)
@@ -151,8 +152,8 @@ if __name__ == "__main__":
         model = TQC("MlpPolicy", env, learning_rate=0.003, batch_size=256, verbose=1)
         if do_training:
             start = timeit.default_timer()
-            model.learn(total_timesteps=500000, )
-            model.save(model_name.lower() + "_collision")
+            model.learn(total_timesteps=50000, )
+            model.save(model_path)
             stop = timeit.default_timer()
             print("Training took", stop - start, "seconds.")
         model.load(model_path)
