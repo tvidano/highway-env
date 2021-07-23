@@ -53,20 +53,20 @@ class CollisionEnv(HighwayEnv):
             "lanes_count": 3,
             "look_ahead_distance": 50, # [m]
             "observation": {
-                "type": "Kinematics",
-                "vehicles_count": 15,
-                "see_behind": True,
-                "features": ["presence", "x", "y", "vx", "vy"],
-                # "features_range": {
-                #     "x": [-100, 100],
-                #     "y": [-100, 100],
-                #     "vx": [-45, 45],
-                #     "vy": [-20, 20]
-                # },
-                "absolute": False,
-                "order": "sorted",
-                "flatten": True,
-                "observe_intentions": False,
+                "type": "LidarObservation", # "Kinematics"
+                # "vehicles_count": 15,
+                # "see_behind": True,
+                # "features": ["presence", "x", "y", "vx", "vy"],
+                # # "features_range": {
+                # #     "x": [-100, 100],
+                # #     "y": [-100, 100],
+                # #     "vx": [-45, 45],
+                # #     "vy": [-20, 20]
+                # # },
+                # "absolute": False,
+                # "order": "sorted",
+                # "flatten": True,
+                # "observe_intentions": False,
             },
             "offroad_terminal": True,
             "policy_frequency": 15,  # [Hz]
@@ -341,4 +341,4 @@ class CollisionEnv(HighwayEnv):
         }
         return info
 
-utils.register_id_once('collision-v0','collision_env.envs:CollisionEnv')
+utils.register_id_once('collision-v0','highway_env.envs:CollisionEnv')
