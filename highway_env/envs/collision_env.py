@@ -77,7 +77,7 @@ class CollisionEnv(HighwayEnv):
             "time_to_intervene": 5,  # [s]
             "vehicles_count": 40,
             "vehicles_density": 2,
-            "control_time_after_avoid": 3,  # [s]
+            "control_time_after_avoid": 6,  # [s]
             "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
             "reward_type": "sparse", # dense = reward is given on linear scale and for avoiding a collision.
                                      # sparse = reward is given ONLY for avoidance.
@@ -88,6 +88,7 @@ class CollisionEnv(HighwayEnv):
 
     def _create_vehicles(self) -> None:
         self.active = 0
+        self.did_run = False
         """Create some new random vehicles of a given type, and add them on the road."""
         if self.config["controlled_vehicles"] > 1:
             raise ValueError(f'{self.config["controlled_vehicles"]} controlled vehicles set, but CollisionEnv uses only 1.')
@@ -147,8 +148,8 @@ class CollisionEnv(HighwayEnv):
                 if self.did_run:
                     obs = self.observation_type.observe()
                     # obs += 1 if self.active == 2 or self.active == 1 else 0
-                    # obs += self.vehicle.position[0]
-                    # obs += self.vehicle.position[1]
+                    obs += self.vehicle.position[0]
+                    obs += self.vehicle.position[1]
                     # obs += self.vehicle.lane_index[-1]
                     reward = self._reward(action)
                     terminal = self._is_terminal()
@@ -164,15 +165,13 @@ class CollisionEnv(HighwayEnv):
             # self.time = 0 <-- this could start the time at when the active starts
             self.did_run = True
 
-
-
         self.steps += 1
         self._simulate(action)
 
         obs = self.observation_type.observe()
         #obs += 1 if self.active == 2 or self.active == 1 else 0
-        #obs += self.vehicle.position[0]
-        #obs += self.vehicle.position[1]
+        obs += self.vehicle.position[0]
+        obs += self.vehicle.position[1]
         #obs += self.vehicle.lane_index[-1]
         reward = self._reward(action)
         terminal = self._is_terminal()
@@ -299,6 +298,9 @@ class CollisionEnv(HighwayEnv):
             reward -= damage
         if self.becomes_skynet:
             reward = -999999
+        #trying to reward straight after correction, nope, bad idea
+        #if self.active == 2:
+            #reward += 0.9 - 0.05 * abs(self.vehicle.lateral_velocity)
         return reward
 
 
@@ -341,4 +343,4 @@ class CollisionEnv(HighwayEnv):
         }
         return info
 
-utils.register_id_once('collision-v0','collision_env.envs:CollisionEnv')
+utils.register_id_once('collision-v0','highway_env.envs:CollisionEnv')
