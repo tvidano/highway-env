@@ -45,8 +45,9 @@ if 'highway_env' not in sys.modules:
 # ==================================
 
 if __name__ == "__main__":
-    env = highway_env.envs.collision_env.CollisionEnv()
-
+    #env = highway_env.envs.collision_env.CollisionEnv()
+    env = gym.make('collision-v0')
+    
     # Recommended Environment Hypertuning Parameters:
     env.configure({
         "duration": 15,  # [s]
