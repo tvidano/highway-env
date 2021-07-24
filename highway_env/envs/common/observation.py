@@ -6,7 +6,7 @@ import pandas as pd
 from highway_env import utils
 from highway_env.envs.common.finite_mdp import compute_ttc_grid
 from highway_env.envs.common.graphics import EnvViewer
-from highway_env.road.lane import AbstractLane
+from highway_env.road.lane import AbstractLane, StraightLane
 from highway_env.utils import distance_to_circle
 from highway_env.vehicle.controller import MDPVehicle
 
@@ -501,6 +501,30 @@ class LidarObservation(ObservationType):
         return np.array([[np.cos(index * self.angle)], [np.sin(index * self.angle)]])
 
 
+class ADSObservation(LidarObservation):
+    """Autonomous Driving System (ADS) observation ncludes LidarObservation and vehicle pose."""
+
+    def __init__(self, env,
+                cells: int = 16,
+                maximum_range: float = 60,
+                normalize: bool = True,
+                **kwargs):
+        super().__init__(env, cells, maximum_range, normalize, **kwargs)
+        self.pose = np.array([0, 0])
+
+    def space(self) -> spaces.Space:
+        high = 1 if self.normalize else self.maximum_range
+        return spaces.Box(shape=(self.cells + 1, 2), low=-high, high=high, dtype=np.float32)
+
+    def observe(self) -> np.ndarray:
+        lidarObs = super().observe()
+        self.pose = self.env.vehicle.position.reshape((1,2)).copy()
+        if self.normalize:
+            self.pose[(0,0)] = self.pose[(0,0)] / self.env.ROAD_LENGTH
+            self.pose[(0,1)] = self.pose[(0,1)] / (self.env.config["lanes_count"] * StraightLane.DEFAULT_WIDTH)
+        return np.vstack([lidarObs, self.pose])
+
+
 def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
     if config["type"] == "TimeToCollision":
         return TimeToCollisionObservation(env, **config)
@@ -518,6 +542,8 @@ def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
         return MultiAgentObservation(env, **config)
     elif config["type"] == "LidarObservation":
         return LidarObservation(env, **config)
+    elif config["type"] == "ADSObservation":
+        return ADSObservation(env, **config)
     elif config["type"] == "ExitObservation":
         return ExitObservation(env, **config)
     else:

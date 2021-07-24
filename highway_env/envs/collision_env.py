@@ -1,4 +1,3 @@
-from highway_env.vehicle.dynamics import BicycleVehicle, CoupledDynamics
 from os import replace
 import warnings
 from typing import List, Tuple, Optional, Callable
@@ -7,12 +6,14 @@ import numpy as np
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.envs.common.action import Action
+from highway_env.envs.common.observation import ObservationType
 from highway_env.envs.highway_env import HighwayEnv
 from highway_env.road.road import Road, RoadNetwork
 from highway_env.utils import near_split, relative_velocity
 from highway_env.vehicle.controller import ControlledVehicle
+from highway_env.vehicle.objects import RoadObject, Obstacle
+from highway_env.vehicle.dynamics import BicycleVehicle, CoupledDynamics
 
-Observation = np.ndarray
 class CollisionEnv(HighwayEnv):
     """
     A highway driving environment with high probability of collisions.
@@ -22,6 +23,8 @@ class CollisionEnv(HighwayEnv):
     rewarded based on its ability to avoid that collision or mitigate the 
     damage of the collision.
     """
+    ROAD_LENGTH = 10000
+
     def __init__(self, config: dict = None) -> None:
         super().__init__(config)
         self.time_to_collision = np.inf
@@ -53,7 +56,7 @@ class CollisionEnv(HighwayEnv):
             "lanes_count": 3,
             "look_ahead_distance": 50, # [m]
             "observation": {
-                "type": "LidarObservation", # "Kinematics"
+                "type": "ADSObservation", # "Kinematics" "LidarObservation"
                 # "vehicles_count": 15,
                 # "see_behind": True,
                 # "features": ["presence", "x", "y", "vx", "vy"],
@@ -85,6 +88,11 @@ class CollisionEnv(HighwayEnv):
                                      # penalty_dense = reward for avoiding collision, penalize based on energy of crash and offroad
         })
         return config
+
+    def _create_road(self) -> None:
+        """Create a road composed of straight adjacent lanes."""
+        self.road = Road(network=RoadNetwork.straight_road_network(self.config["lanes_count"], length=self.ROAD_LENGTH, speed_limit=30),
+                         np_random=self.np_random, record_history=self.config["show_trajectories"])
 
     def _create_vehicles(self) -> None:
         self.active = 0
@@ -120,9 +128,8 @@ class CollisionEnv(HighwayEnv):
         for select_vehicle in select_vehicles:
             dist_from_ego = select_vehicle.position[0] - ego_pos_x
             select_vehicle.position[0] = ego_pos_x - dist_from_ego
-            
 
-    def step(self, action: Action) -> Tuple[Observation, float, bool, dict]:
+    def step(self, action: Action) -> Tuple[ObservationType, float, bool, dict]:
         """
         Perform an action and step the environment dynamics.
 
@@ -142,15 +149,10 @@ class CollisionEnv(HighwayEnv):
             # spin simulation
             self.steps += 1
             self._simulate(np.array([0, 0]))
-            #print("looping")
 
             if self._is_terminal():
                 if self.did_run:
                     obs = self.observation_type.observe()
-                    # obs += 1 if self.active == 2 or self.active == 1 else 0
-                    obs += self.vehicle.position[0]
-                    obs += self.vehicle.position[1]
-                    # obs += self.vehicle.lane_index[-1]
                     reward = self._reward(action)
                     terminal = self._is_terminal()
                     info = self._info(obs, action)
@@ -169,10 +171,6 @@ class CollisionEnv(HighwayEnv):
         self._simulate(action)
 
         obs = self.observation_type.observe()
-        #obs += 1 if self.active == 2 or self.active == 1 else 0
-        obs += self.vehicle.position[0]
-        obs += self.vehicle.position[1]
-        #obs += self.vehicle.lane_index[-1]
         reward = self._reward(action)
         terminal = self._is_terminal()
         info = self._info(obs, action)
@@ -318,7 +316,7 @@ class CollisionEnv(HighwayEnv):
             self.time >= self.config["duration"] or \
             (self.config["offroad_terminal"] and not self.vehicle.on_road)
 
-    def _info(self, obs: Observation, action: Action) -> dict:
+    def _info(self, obs: ObservationType, action: Action) -> dict:
         """
         Return a dictionary of additional information
 
