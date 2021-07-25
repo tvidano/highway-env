@@ -104,8 +104,8 @@ class ConstantPacTire(AbstractTire):
 
     def default_params(self):
         params = {
-            "Bx": 10,
-            "Cx": 1.4,#1.3,
+            "Bx": 9,
+            "Cx": 1.3,
             "Ex": -0.9,#0.95,
             "By": 8,
             "Cy": 1.4,

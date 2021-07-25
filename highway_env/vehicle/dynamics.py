@@ -201,7 +201,7 @@ class CoupledDynamics(Vehicle):
         self.wheel_radius = 0.33 # Meters
         self.wheel_inertia = 0.47 # kg-m^2
         self.max_engine_torque = 250 # N-m
-        self.max_brake_torque = 1100 # N-m, ~0.6 g's 
+        self.max_brake_torque = 1200 # N-m 
         self.cg_a = 2 # Location of center of mass from front of the vehicle, Meters
         self.cg_b = self.length - self.cg_a
         self.Fz_front = 9.81/2*self.mass*self.cg_b/self.length

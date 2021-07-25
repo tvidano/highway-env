@@ -82,7 +82,7 @@ class CollisionEnv(HighwayEnv):
             "vehicles_density": 2,
             "control_time_after_avoid": 6,  # [s]
             "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
-            "reward_type": "sparse", # dense = reward is given on linear scale and for avoiding a collision.
+            "reward_type": "stop", # dense = reward is given on linear scale and for avoiding a collision.
                                      # sparse = reward is given ONLY for avoidance.
                                      # penalty = reward given for avoiding a collision, penalty given for collision
                                      # penalty_dense = reward for avoiding collision, penalize based on energy of crash and offroad
