@@ -201,7 +201,7 @@ class CoupledDynamics(Vehicle):
         self.wheel_radius = 0.33 # Meters
         self.wheel_inertia = 0.47 # kg-m^2
         self.max_engine_torque = 250 # N-m
-        self.max_brake_torque = 400 # N-m
+        self.max_brake_torque = 1100 # N-m, ~0.6 g's 
         self.cg_a = 2 # Location of center of mass from front of the vehicle, Meters
         self.cg_b = self.length - self.cg_a
         self.Fz_front = 9.81/2*self.mass*self.cg_b/self.length
@@ -213,7 +213,7 @@ class CoupledDynamics(Vehicle):
         self.longitudinal_velocity = self.speed # m/s
         self.lateral_velocity = 0 # m/s
         self.yaw_rate = 0 # rad/s
-        self.front_wheel_angular_velocity = self.rear_wheel_angular_velocity = self.longitudinal_velocity/self.wheel_radius
+        self.front_wheel_angular_velocity = self.longitudinal_velocity/self.wheel_radius
         self.tire_forces = np.array([self.front_tire.get_forces(), self.rear_tire.get_forces()])
         self.is_braking = False
         self.is_steering = False
@@ -230,7 +230,6 @@ class CoupledDynamics(Vehicle):
                          [self.lateral_velocity],
                          [self.yaw_rate],
                          [self.front_wheel_angular_velocity],
-                         [self.rear_wheel_angular_velocity],
                          [self.delta]])
 
     def step(self, dt: float) -> None:
@@ -239,18 +238,26 @@ class CoupledDynamics(Vehicle):
         else:
             self.is_braking = True
         n = 10
+        # Loop at higher frequency for more accurate simulation:
         for _ in range(n):
             self.clip_actions(dt/n)
             self.longitudinal_velocity, self.front_wheel_angular_velocity =  \
                 self.RK4(self.long_dynamics, self.state[[2,5], 0], dt/n)
-            if self.longitudinal_velocity < 1:
+            if self.longitudinal_velocity < 0.1:
                 self.longitudinal_velocity = 0
+            # Prevent wheel from rotating backwards (no reverse gear):
             if self.front_wheel_angular_velocity < 0:
                 self.front_wheel_angular_velocity = 0
-            self.lateral_velocity, self.yaw_rate = self.RK4(self.lateral_dynamics, self.state[[3,4], 0], dt/n)
+            
+            self.lateral_velocity, self.yaw_rate = self.RK4(
+                self.lateral_dynamics, 
+                self.state[[3,4], 0], 
+                dt/n)
+            self.update_tire_states()
         self.heading += self.yaw_rate*dt
         c, s = np.cos(self.heading), np.sin(self.heading)
         R = np.array(((c, -s), (s, c)))
+        # Don't use vehicle property velocity.
         velocity = R @ np.array([self.longitudinal_velocity, self.lateral_velocity])
         if self.impact is not None:
             self.position += self.impact
@@ -260,67 +267,54 @@ class CoupledDynamics(Vehicle):
             self.position[0] += velocity[0]*dt
             self.position[1] += velocity[1]*dt
 
-        self.front_tire.state = np.array([self.compute_long_slip(self.state[[2,5],0]),
-                                          self.compute_lat_slip(*self.state[[2,3,4],0])[0],
-                                          self.Fz_front,
-                                          self.mu])        
-        self.rear_tire.state = np.array([self.compute_long_slip(self.state[[2,6],0]),
-                                         self.compute_lat_slip(*self.state[[2,3,4],0])[1],
-                                         self.Fz_rear,
-                                         self.mu])
-        self.tire_forces = np.array([*self.front_tire.get_forces(), *self.rear_tire.get_forces()])
         # For _info()
-        self.slip_values = np.array([self.compute_long_slip(self.state[[2,5],0]),
-                                     self.compute_lat_slip(*self.state[[2,3,4],0])])
+        self.tire_forces = np.array([*self.front_tire.get_forces(), *self.rear_tire.get_forces()])
+        self.slip_values = np.array([self.compute_long_slip(*self.state[[2,5],0]),
+                                     *self.compute_lat_slip(*self.state[[2,3,4],0])])
         self.actuators = np.array([self.torque, self.delta])
         self.on_state_update()
 
     def long_dynamics(self, current_long_state: np.ndarray) -> np.ndarray:
         """
-        Longitudinal dynamics defined as two wheels. States are:
-            0. longitudinal_velocity
-            1. front_wheel_angular_velocity
+        Longitudinal dynamics defined as single wheel with single mass.
         """
         assert(1 >= self.action["acceleration"] >= -1)
         if self.is_braking:
-            front_torque = 2*self.action["acceleration"]*self.max_brake_torque
+            front_torque = self.action["acceleration"]*self.max_brake_torque
             F_drag = 1/2*1.225*(1.6 + 0.00056*(self.mass - 765))*self.longitudinal_velocity**2
-            full_braking_compensation = 1.3
+            full_braking_compensation = 1
         else:
             front_torque = self.action["acceleration"]*self.max_engine_torque
             F_drag = 0 # assume driver maintains speed, negating drag.
             full_braking_compensation = 1
-        delta = self.delta
         self.torque = front_torque
 
         assert((current_long_state.ndim == 1) & (current_long_state.size == 2))
-        front_wheel_state = np.array(current_long_state[[0,1]])
-        front_kappa = self.compute_long_slip(front_wheel_state)
+        front_kappa = self.compute_long_slip(*current_long_state)
         front_tire_state = self.front_tire.state
         front_Fx, front_Fy = self.front_tire.get_forces(
-            np.insert(front_tire_state[1:],0,front_kappa))
+            np.array([front_kappa, *front_tire_state[1:]]))
         
-        front_F = front_Fx*np.cos(delta) - front_Fy*np.sin(delta)
-        front_F *= full_braking_compensation
-        d_U = 2*(front_F - F_drag)/self.mass
+        front_Fx *= full_braking_compensation
+        d_U = 2*(front_Fx - F_drag)/self.mass
         d_omega_front = (front_torque - self.wheel_radius*front_Fx)/self.wheel_inertia
         return np.array([d_U, d_omega_front])
 
-    def compute_long_slip(self, wheel_state: np.ndarray) -> float:
+    def compute_long_slip(self, V_x, omega) -> float:
         """
         States:
             0. wheel center longitudinal velocity [m/s]
             1. wheel rotational velocity [rad/s]
         """
-        tangent_vel = self.wheel_radius*wheel_state[1]
-        if math.isclose(wheel_state[0],0,abs_tol=1e-3):
-            return 0
-        elif math.isclose(tangent_vel,0,abs_tol=1e-3):
-            return 0
+        tangent_vel = self.wheel_radius*omega
         if self.is_braking:
-            kappa = (tangent_vel - wheel_state[0])/wheel_state[0]
+            if math.isclose(V_x,0,abs_tol=1e-3):
+                return 0
+            kappa = (tangent_vel - V_x)/V_x
         else:
-            kappa = (tangent_vel - wheel_state[0])/tangent_vel
+            if math.isclose(tangent_vel,0,abs_tol=1e-3):
+                return 0
+            kappa = (tangent_vel - V_x)/tangent_vel
         return kappa
 
     def lateral_dynamics(self, current_lat_state: np.ndarray) -> np.ndarray:
@@ -362,6 +356,24 @@ class CoupledDynamics(Vehicle):
         K3 = ode_func(current_state + 0.5*dt*K2)
         K4 = ode_func(current_state + dt*K3)
         return current_state + (1/6)*(K1 + 2*K2 + 2*K3 + K4)*dt
+
+    def update_tire_states(self) -> None:
+        """Update front and rear tire states."""
+        alpha_f, alpha_r = self.compute_lat_slip(self.longitudinal_velocity, 
+                                                 self.lateral_velocity,
+                                                 self.yaw_rate)
+        self.front_tire.state = np.array([
+            self.compute_long_slip(self.longitudinal_velocity,
+                                   self.front_wheel_angular_velocity),
+            alpha_f, 
+            self.Fz_front, 
+            self.mu])
+        self.rear_tire.state = np.array([
+            self.compute_long_slip(self.longitudinal_velocity,
+                                   self.front_wheel_angular_velocity),
+            alpha_r, 
+            self.Fz_rear,
+            self.mu])
 
     def clip_actions(self, dt) -> None:
         if self.crashed:

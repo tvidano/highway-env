@@ -86,6 +86,7 @@ class CollisionEnv(HighwayEnv):
                                      # sparse = reward is given ONLY for avoidance.
                                      # penalty = reward given for avoiding a collision, penalty given for collision
                                      # penalty_dense = reward for avoiding collision, penalize based on energy of crash and offroad
+                                     # stop = linear reward to encourage vehicle to learn to come to a stop
         })
         return config
 
@@ -198,7 +199,7 @@ class CollisionEnv(HighwayEnv):
         relative_distance = front_vehicle.position[0] - self.vehicle.position[0] if front_vehicle else np.inf
         if relative_distance > self.config["look_ahead_distance"]:
             return False
-        relative_x_velocity = front_vehicle.velocity[0] - self.vehicle.velocity[0]
+        relative_x_velocity = front_vehicle.velocity[0] - self.vehicle.longitudinal_velocity
         self.time_to_collision = np.inf if relative_x_velocity >= 0 else (-relative_distance - self.vehicle.LENGTH)/ relative_x_velocity
         if self.config["imminent_collision_distance"]:
             return not self.time_to_collision > self.config["time_to_intervene"] or relative_distance < self.config["imminent_collision_distance"]
@@ -275,8 +276,8 @@ class CollisionEnv(HighwayEnv):
             if not self.config["offroad_terminal"]:
                 print('Using a penalty for going offroad, but not ending episode when going offroad. Is this intended?')
             reward += self.config["off_road_reward"] if not self.vehicle.on_road else 0
-        if velocity_rew:
-            reward += -self.vehicle.velocity[0]/self.config["initial_ego_speed"] + 1
+        if velocity_rew and self._is_terminal():
+            reward += -self.vehicle.longitudinal_velocity/self.config["initial_ego_speed"] + 1
 
         if collision_pen:
             reward -= self.config["collision_penalty"] if self.vehicle.crashed else 0
@@ -300,9 +301,6 @@ class CollisionEnv(HighwayEnv):
             reward -= damage
         if self.becomes_skynet:
             reward = -999999
-        #trying to reward straight after correction, nope, bad idea
-        #if self.active == 2:
-            #reward += 0.9 - 0.05 * abs(self.vehicle.lateral_velocity)
         return reward
 
 
