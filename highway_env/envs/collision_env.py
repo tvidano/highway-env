@@ -241,7 +241,7 @@ class CollisionEnv(HighwayEnv):
         """
         reward = 0
         avoidance_rew = imminent_collision_rew = damage_mitigation_rew \
-            = survival_rew = offroad_rew = collision_pen = offroad_pen = damage_pen = False
+            = survival_rew = offroad_rew = velocity_rew = collision_pen = offroad_pen = damage_pen = False
         if self.config['reward_type'] == 'sparse':
             avoidance_rew = True
         elif self.config['reward_type'] == 'dense':
@@ -250,6 +250,8 @@ class CollisionEnv(HighwayEnv):
             avoidance_rew = collision_pen = offroad_pen = True
         elif self.config['reward_type'] == 'penalty_dense':
             avoidance_rew = damage_pen = True
+        elif self.config['reward_type'] == 'stop':
+            velocity_rew = True
         else:
             raise(NotImplementedError, f'{self.config["reward_type"]} reward type not implemented or misstyped.')
         
@@ -273,7 +275,9 @@ class CollisionEnv(HighwayEnv):
             if not self.config["offroad_terminal"]:
                 print('Using a penalty for going offroad, but not ending episode when going offroad. Is this intended?')
             reward += self.config["off_road_reward"] if not self.vehicle.on_road else 0
-        
+        if velocity_rew:
+            reward += -self.vehicle.velocity[0]/self.config["initial_ego_speed"] + 1
+
         if collision_pen:
             reward -= self.config["collision_penalty"] if self.vehicle.crashed else 0
         if offroad_pen:
