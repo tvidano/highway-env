@@ -4,8 +4,10 @@ import matplotlib.pyplot as plt
 class AbstractTire(object):
     """General object for tire model."""
 
-    def __init__(self, init_state: np.ndarray, params: dict = None) -> None:
+    def __init__(self, init_state: np.ndarray = None, params: dict = None) -> None:
         # Configure
+        if init_state is None:
+            init_state = np.array([0, 0])
         self.params = self.default_params()
         self.configure(params)
         self.state = init_state
@@ -36,17 +38,6 @@ class AbstractTire(object):
         :param tire_state: current state of the tire
         """
         raise NotImplementedError
-
-    def get_tire_curves(self, tire_states: np.ndarray) -> np.ndarray:
-        """
-        Calculates tire forces for the given a time series of tire_state.
-        """
-        self.state = tire_states[:,0]
-        tire_forces = np.array([self.get_forces()])
-        for i in range(np.size(tire_states,1) - 1):
-            self.state = tire_states[:,i+1]
-            tire_forces = np.vstack((tire_forces, [self.get_forces()]))
-        return tire_forces
 
 class LinearTire(AbstractTire):
     """
@@ -106,14 +97,16 @@ class ConstantPacTire(AbstractTire):
     lateral and longitudinal forces.
     """
 
-    def __init__(self, init_state: np.ndarray, params: dict = None) -> None:
+    def __init__(self, init_state: np.ndarray = None, params: dict = None) -> None:
+        if init_state is None:
+            init_state = np.array([0, 0, 1500, 1.0])
         super().__init__(init_state, params)
 
     def default_params(self):
         params = {
             "Bx": 10,
-            "Cx": 1.3,
-            "Ex": 0.95,
+            "Cx": 1.4,#1.3,
+            "Ex": -0.9,#0.95,
             "By": 8,
             "Cy": 1.4,
             "Ey": -2
@@ -155,28 +148,60 @@ class ConstantPacTire(AbstractTire):
             Fx = Fx/np.linalg.norm(np.array([Fx,Fy]))*F_max
             Fy = Fy/np.linalg.norm(np.array([Fx,Fy]))*F_max
         return np.array([Fx, Fy])
+    
+    def get_tire_curves(self, tire_states: np.ndarray = None) -> list:
+        """
+        Calculates tire forces for the given a time series of tire_state.
+        """
+        if tire_states is None:
+            n = 100
+            kappas = np.linspace(-1, 1, n)
+            alphas = np.linspace(-15, 15, n) * np.pi / 180
+            Fzs = np.ones(n)*1500
+            mus = np.ones(n)*1.0
+            tire_states = np.vstack([kappas, alphas, Fzs, mus])
+        pure_long_inputs = np.vstack([tire_states[0,:], np.zeros(n), tire_states[2:,:]])
+        pure_lat_inputs = np.vstack([np.zeros(n) , tire_states[1:,:]])
+        input_list = [pure_long_inputs, pure_lat_inputs, tire_states]
+        tire_curves = []
+        for i, inputs in enumerate(input_list):
+            self.state = inputs[:,0]
+            Fx, Fy = self.get_forces()
+            if i == 0:
+                tire_curve = np.array([inputs[0,0], Fx])
+            elif i == 1:
+                tire_curve = np.array([inputs[1,0], Fy])
+            elif i == 2:
+                tire_curve = np.array([Fx, Fy])
+            for j in range(np.size(inputs, 1) - 1):
+                self.state = inputs[:,j+1]
+                Fx, Fy = self.get_forces()
+                if i == 0:
+                    output = np.array([inputs[0,j+1], Fx])
+                elif i == 1:
+                    output = np.array([inputs[1,j+1], Fy])
+                elif i == 2:
+                    output = np.array([Fx, Fy])
+                tire_curve = np.vstack([tire_curve, [output]])
+            tire_curves.append(tire_curve)
+        return tire_curves
 
 if __name__ == "__main__":
-    n = 100
-    kappas = np.linspace(-1, 1, n)
-    alphas = np.linspace(-15, 15, n) * np.pi / 180
-    #alphas = np.ones((1,n))*0
-    Fzs = np.ones((1,n))*1500
-    mus = np.ones((1,n))*0.9
-    inputs = np.vstack((kappas,alphas,Fzs,mus))
-
-    pac = ConstantPacTire(inputs[:,0])
-    pac_combined = pac.get_tire_curves(inputs)
+    pac = ConstantPacTire()
+    pure_long, pure_lat, combined = pac.get_tire_curves()
     plt.figure()
-    plt.plot(kappas.flatten(),pac_combined[:,0])
-    plt.xlabel('long. slip')
-    plt.ylabel('lat force [N]')
+    plt.plot(pure_long[:,0], pure_long[:,1])
+    plt.xlabel('Longitudinal slip')
+    plt.ylabel('Longitudinal Force [N]')
+    plt.grid(True)
     plt.figure()
-    plt.plot(pac_combined[:,0],pac_combined[:,1])
-    plt.xlabel('long. force [N]')
-    plt.ylabel('lat. force [N]')
+    plt.plot(pure_lat[:,0], pure_lat[:,1])
+    plt.xlabel('Lateral slip [deg]')
+    plt.ylabel('Lateral force [N]')
+    plt.grid(True)
     plt.figure()
-    plt.plot(alphas.flatten() * 180 / np.pi,pac_combined[:,1])
-    plt.xlabel('lat. slip [deg]')
-    plt.ylabel('lat. force [N]')
+    plt.plot(combined[:,0], combined[:,1])
+    plt.xlabel('Longitudinal force [N]')
+    plt.ylabel('Lateral force [N]')
+    plt.grid(True)
     plt.show()
