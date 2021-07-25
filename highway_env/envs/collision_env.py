@@ -9,6 +9,7 @@ from highway_env.envs.common.action import Action
 from highway_env.envs.common.observation import ObservationType
 from highway_env.envs.highway_env import HighwayEnv
 from highway_env.road.road import Road, RoadNetwork
+from highway_env.vehicle.objects import Obstacle
 from highway_env.utils import near_split, relative_velocity
 from highway_env.vehicle.controller import ControlledVehicle
 from highway_env.vehicle.objects import RoadObject, Obstacle
@@ -49,17 +50,17 @@ class CollisionEnv(HighwayEnv):
             "off_road_penalty": 1,
             "collision_sensitivity": 1/40,
             "controlled_vehicles": 1,
-            "duration": 20, # [s]
+            "duration": 15, # [s]
             "ego_spacing": 2,
             "initial_ego_speed": 20, # [m/s]
             "initial_lane_id": None,
             "lanes_count": 3,
             "look_ahead_distance": 50, # [m]
             "observation": {
-                "type": "ADSObservation", # "Kinematics" "LidarObservation"
+                "type": "ADSObservation", # "Kinematics" "LidarObservation" "ADSObservation"
                 # "vehicles_count": 15,
                 # "see_behind": True,
-                # "features": ["presence", "x", "y", "vx", "vy"],
+                # "features": ["presence", "x", "y", "vx", "vy", "sin_h", "cos_h"],
                 # # "features_range": {
                 # #     "x": [-100, 100],
                 # #     "y": [-100, 100],
@@ -68,17 +69,18 @@ class CollisionEnv(HighwayEnv):
                 # # },
                 # "absolute": False,
                 # "order": "sorted",
-                # "flatten": True,
+                # "flatten": False,
                 # "observe_intentions": False,
             },
             "offroad_terminal": True,
             "policy_frequency": 15,  # [Hz]
             "road_friction": 1.0,  # Road-tire coefficient of friction (0,1]
+            "road_barriers": False,  # adds obstacles at the outside lane borders
             "simulation_frequency": 15,  # [Hz]
-            "stopping_vehicles_count": 2,
+            "stopping_vehicles_count": 5,
             "time_after_collision": 0,  # [s] for capturing rear-end collisions
-            "time_to_intervene": 5,  # [s]
-            "vehicles_count": 40,
+            "time_to_intervene": 6,  # [s]
+            "vehicles_count": 25,
             "vehicles_density": 2,
             "control_time_after_avoid": 6,  # [s]
             "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
@@ -86,15 +88,24 @@ class CollisionEnv(HighwayEnv):
                                      # sparse = reward is given ONLY for avoidance.
                                      # penalty = reward given for avoiding a collision, penalty given for collision
                                      # penalty_dense = reward for avoiding collision, penalize based on energy of crash and offroad
+                                    # variant = Nihal's special sauce
         })
         return config
 
     def _create_road(self) -> None:
-        """Create a road composed of straight adjacent lanes."""
-        self.road = Road(network=RoadNetwork.straight_road_network(self.config["lanes_count"], length=self.ROAD_LENGTH, speed_limit=30),
+
+        """Create a road composed of straight adjacent lanes, and barrier objects at the edges"""
+        road = Road(network=RoadNetwork.straight_road_network(self.config["lanes_count"], speed_limit=30),
                          np_random=self.np_random, record_history=self.config["show_trajectories"])
+        if self.config['road_barriers']:
+            road.objects.append(Obstacle(road, road.network.get_lane(('0', '1', 0)).position(0, 0), 10000, 0.5))
+            road.objects.append(Obstacle(road, road.network.get_lane(('0', '1', self.config["lanes_count"] - 1)).position(0, 0), 10000, 0.5))
+
+        self.road = road
+
 
     def _create_vehicles(self) -> None:
+        self.time = 0
         self.active = 0
         self.did_run = False
         """Create some new random vehicles of a given type, and add them on the road."""
@@ -159,8 +170,7 @@ class CollisionEnv(HighwayEnv):
 
                     return obs, reward, terminal, info
                 else:
-                    print('Dummy run...')
-                    self.__init__(self.config)
+                    self.reset()
 
         else:
             # if self.did_run = False:
@@ -171,6 +181,12 @@ class CollisionEnv(HighwayEnv):
         self._simulate(action)
 
         obs = self.observation_type.observe()
+
+        #obs += 1 if self.active == 2 or self.active == 1 else 0
+        #obs += self.vehicle.position[0] # turns out that Kinematics gives this
+        #obs += self.vehicle.position[1]
+        #obs += self.vehicle.lane_index[-1]
+
         reward = self._reward(action)
         terminal = self._is_terminal()
         info = self._info(obs, action)
@@ -241,7 +257,7 @@ class CollisionEnv(HighwayEnv):
         """
         reward = 0
         avoidance_rew = imminent_collision_rew = damage_mitigation_rew \
-            = survival_rew = offroad_rew = collision_pen = offroad_pen = damage_pen = False
+            = survival_rew = offroad_rew = collision_pen = offroad_pen = damage_pen = variant = False
         if self.config['reward_type'] == 'sparse':
             avoidance_rew = True
         elif self.config['reward_type'] == 'dense':
@@ -250,6 +266,8 @@ class CollisionEnv(HighwayEnv):
             avoidance_rew = collision_pen = offroad_pen = True
         elif self.config['reward_type'] == 'penalty_dense':
             avoidance_rew = damage_pen = True
+        elif self.config['reward_type'] == 'variant':
+            variant = True
         else:
             raise(NotImplementedError, f'{self.config["reward_type"]} reward type not implemented or misstyped.')
         
@@ -294,6 +312,17 @@ class CollisionEnv(HighwayEnv):
                     Ef = self.vehicle.mass*(v1/2 + v2/2)**2
                     damage += (Ei - Ef) / max_damage
             reward -= damage
+        if variant:
+            reward = 0
+            reward += self.time
+            if duration_reached and not self.vehicle.crashed:
+                reward += 500
+            if self.active == 2:
+                reward += 10 - abs(self.vehicle.lateral_velocity)
+            if not self.vehicle.on_road:
+                reward = -15 *
+            if self.vehicle.crashed:
+                reward = -15
         if self.becomes_skynet:
             reward = -999999
         #trying to reward straight after correction, nope, bad idea
