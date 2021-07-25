@@ -269,8 +269,9 @@ class CoupledDynamics(Vehicle):
                                          self.Fz_rear,
                                          self.mu])
         self.tire_forces = np.array([*self.front_tire.get_forces(), *self.rear_tire.get_forces()])
+        # For _info()
         self.slip_values = np.array([self.compute_long_slip(self.state[[2,5],0]),
-                                     *self.compute_lat_slip(*self.state[2:5])])
+                                     self.compute_lat_slip(*self.state[[2,3,4],0])])
         self.actuators = np.array([self.torque, self.delta])
         self.on_state_update()
 
