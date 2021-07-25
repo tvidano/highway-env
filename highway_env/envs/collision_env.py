@@ -324,7 +324,7 @@ class CollisionEnv(HighwayEnv):
             if self.active == 2:
                 reward += 10 - abs(self.vehicle.lateral_velocity)
             if not self.vehicle.on_road:
-                reward = -15 *
+                reward = -15 * 0
             if self.vehicle.crashed:
                 reward = -15
         if self.becomes_skynet:
