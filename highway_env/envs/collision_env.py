@@ -33,6 +33,7 @@ class CollisionEnv(HighwayEnv):
         self.time_since_avoidance = np.inf
         self.becomes_skynet = False  # change to true if self becomes Skynet
         self.did_run = False
+        self.prev_vel = self.config["initial_ego_speed"]
 
     @classmethod
     def default_config(cls) -> dict:
@@ -73,18 +74,18 @@ class CollisionEnv(HighwayEnv):
                 # "observe_intentions": False,
             },
             "offroad_terminal": True,
-            "policy_frequency": 15,  # [Hz]
+            "policy_frequency": 30,  # [Hz]
             "road_friction": 1.0,  # Road-tire coefficient of friction (0,1]
             "road_barriers": False,  # adds obstacles at the outside lane borders
-            "simulation_frequency": 15,  # [Hz]
+            "simulation_frequency": 30,  # [Hz]
             "stopping_vehicles_count": 5,
             "time_after_collision": 0,  # [s] for capturing rear-end collisions
             "time_to_intervene": 6,  # [s]
-            "vehicles_count": 25,
+            "vehicles_count": 15,
             "vehicles_density": 2,
             "control_time_after_avoid": 6,  # [s]
             "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
-            "reward_type": "stop", # dense = reward is given on linear scale and for avoiding a collision.
+            "reward_type": "baby_it", # dense = reward is given on linear scale and for avoiding a collision.
                                      # sparse = reward is given ONLY for avoidance.
                                      # penalty = reward given for avoiding a collision, penalty given for collision
                                      # penalty_dense = reward for avoiding collision, penalize based on energy of crash and offroad
@@ -257,7 +258,8 @@ class CollisionEnv(HighwayEnv):
         """
         reward = 0
         avoidance_rew = imminent_collision_rew = damage_mitigation_rew = survival_rew \
-            = offroad_rew = velocity_rew = collision_pen = offroad_pen = damage_pen = variant = False
+            = offroad_rew = velocity_rew = decel_rew = collision_pen = offroad_pen = damage_pen \
+            = variant = False
         if self.config['reward_type'] == 'sparse':
             avoidance_rew = True
         elif self.config['reward_type'] == 'dense':
@@ -270,6 +272,8 @@ class CollisionEnv(HighwayEnv):
             velocity_rew = True
         elif self.config['reward_type'] == 'variant':
             variant = True
+        elif self.config['reward_type'] == 'baby_it':
+            decel_rew = damage_pen = True
         else:
             raise(NotImplementedError, f'{self.config["reward_type"]} reward type not implemented or misstyped.')
         
@@ -295,6 +299,9 @@ class CollisionEnv(HighwayEnv):
             reward += self.config["off_road_reward"] if not self.vehicle.on_road else 0
         if velocity_rew and self._is_terminal():
             reward += -self.vehicle.longitudinal_velocity/self.config["initial_ego_speed"] + 1
+        if decel_rew and self.vehicle.longitudinal_velocity < self.prev_vel:
+            reward += 0.1
+            self.prev_vel = self.vehicle.longitudinal_velocity
 
         if collision_pen:
             reward -= self.config["collision_penalty"] if self.vehicle.crashed else 0

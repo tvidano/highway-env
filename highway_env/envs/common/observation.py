@@ -501,28 +501,63 @@ class LidarObservation(ObservationType):
         return np.array([[np.cos(index * self.angle)], [np.sin(index * self.angle)]])
 
 
-class ADSObservation(LidarObservation):
-    """Autonomous Driving System (ADS) observation ncludes LidarObservation and vehicle pose."""
+class ADSObservation(ObservationType):
+    """
+    Autonomous Driving System (ADS) observation. Provides vehicle states, 
+    distance to front car and rear car, current lane id, and left-right availability flags.
+    Assumes using CollisionEnv with only 3 lanes. Lane 0 is top lane, 2 is bottom.
+    """
 
-    def __init__(self, env,
-                cells: int = 16,
-                maximum_range: float = 60,
-                normalize: bool = True,
-                **kwargs):
-        super().__init__(env, cells, maximum_range, normalize, **kwargs)
-        self.pose = np.array([0, 0])
+    def __init__(self, env: 'AbstractEnv', **kwargs) -> None:
+        super().__init__(env, **kwargs)
+        self.maximum_range = 100
+        self.normalize = False
+        self.threshold = 20
 
     def space(self) -> spaces.Space:
+        """Get the observation space."""
         high = 1 if self.normalize else self.maximum_range
-        return spaces.Box(shape=(self.cells + 1, 2), low=-high, high=high, dtype=np.float32)
+        return spaces.Box(shape=(1, 12), low=-high, high=high, dtype=np.float32)
 
-    def observe(self) -> np.ndarray:
-        lidarObs = super().observe()
-        self.pose = self.env.vehicle.position.reshape((1,2)).copy()
-        if self.normalize:
-            self.pose[(0,0)] = self.pose[(0,0)] / self.env.ROAD_LENGTH
-            self.pose[(0,1)] = self.pose[(0,1)] / (self.env.config["lanes_count"] * StraightLane.DEFAULT_WIDTH)
-        return np.vstack([lidarObs, self.pose])
+    def observe(self):
+        """Get an observation of the environment state."""
+        veh_states = self.env.vehicle.state.flatten()
+        current_lane_index = self.env.road.network.get_closest_lane_index(veh_states[0:2], veh_states[4])
+        current_lane = current_lane_index[-1]
+        front_veh, rear_veh = self.env.road.neighbour_vehicles(self.env.vehicle, current_lane_index)
+        try:
+            front_dist = front_veh.position[0] - veh_states[0]
+            front_dist = self.maximum_range if front_dist > self.maximum_range else front_dist
+        except AttributeError:
+            front_dist = self.maximum_range
+        try:
+            rear_dist = veh_states[0] - rear_veh.position[0]
+            rear_dist = self.maximum_range if rear_dist > self.maximum_range else rear_dist
+        except AttributeError:
+            rear_dist = self.maximum_range
+        left_open = False
+        right_open = False
+        if current_lane != 2:
+            front_veh, rear_veh = self.env.road.neighbour_vehicles(self.env.vehicle, ('0','1',current_lane + 1))
+            try:
+                right_open = (front_veh.position[0] - veh_states[0]) > self.threshold 
+            except AttributeError:
+                right_open = True
+            try:
+                right_open = (veh_states[0] - rear_veh.position[0]) > self.threshold
+            except AttributeError:
+                right_open = True
+        if current_lane != 0:
+            front_veh, rear_veh = self.env.road.neighbour_vehicles(self.env.vehicle, ('0','1',current_lane - 1))
+            try:
+                left_open = (front_veh.position[0] - veh_states[0]) > self.threshold 
+            except AttributeError:
+                left_open = True
+            try:
+                left_open = (veh_states[0] - rear_veh.position[0]) > self.threshold
+            except AttributeError:
+                left_open = True
+        return np.array([[*veh_states, front_dist, rear_dist, current_lane, left_open, right_open]])
 
 
 def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
