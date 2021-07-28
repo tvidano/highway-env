@@ -231,6 +231,38 @@ class MultiAgentAction(ActionType):
             action_type.act(agent_action)
 
 
+class DiscreteSafetyAction(ActionType):
+    """Actions for CollisionEnv where the vehicle can brake or steer with discrete actions."""
+    ACTIONS = {
+        0: {"acceleration": 0,
+            "steering": 0},
+        1: {"acceleration": -0.5,
+            "steering": 0},
+        2: {"acceleration": -1.0,
+            "steering": 0},
+        3: {"acceleration": 0,
+            "steering": -0.5},
+        4: {"acceleration": 0,
+            "steering": 0.5},
+        5: {"acceleration": -1.0,
+            "steering": -0.5},
+        6: {"acceleration": -1.0,
+            "steering": 0.5}
+    }
+    def __init__(self, env: 'AbstractEnv', **kwargs) -> None:
+        super().__init__(env, **kwargs)
+
+    def space(self) -> spaces.Space:
+        return spaces.Discrete(len(self.ACTIONS))
+
+    @property
+    def vehicle_class(self) -> Callable:
+        return CoupledDynamics
+
+    def act(self, action: Action) -> None:
+        self.controlled_vehicle.act(self.ACTIONS[action])
+
+
 def action_factory(env: 'AbstractEnv', config: dict) -> ActionType:
     if config["type"] == "ContinuousAction":
         return ContinuousAction(env, **config)
@@ -238,5 +270,7 @@ def action_factory(env: 'AbstractEnv', config: dict) -> ActionType:
         return DiscreteMetaAction(env, **config)
     elif config["type"] == "MultiAgentAction":
         return MultiAgentAction(env, **config)
+    elif config["type"] == "DiscreteSafetyAction":
+        return DiscreteSafetyAction(env, **config)
     else:
         raise ValueError("Unknown action type")

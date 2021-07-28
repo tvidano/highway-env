@@ -40,7 +40,7 @@ class CollisionEnv(HighwayEnv):
         config = super().default_config()
         config.update({
             "action": {
-                "type": "ContinuousAction",
+                "type": "DiscreteSafetyAction", #,"ContinuousAction"
                 "vehicle_class": CoupledDynamics
             },
             "collision_avoided_reward": 1,
@@ -160,7 +160,7 @@ class CollisionEnv(HighwayEnv):
         while self._update_state() == 0:
             # spin simulation
             self.steps += 1
-            self._simulate(np.array([0, 0]))
+            self._simulate(0)
 
             if self._is_terminal():
                 if self.did_run:
@@ -311,7 +311,7 @@ class CollisionEnv(HighwayEnv):
             reward -= self.config["off_road_penalty"] if not self.vehicle.on_road else 0
         if damage_pen:
             damage = 0
-            max_damage = 1/2*self.vehicle.mass*self.config["initial_ego_speed"]**2
+            max_damage = (1/2*self.vehicle.mass*self.config["initial_ego_speed"]**2)/2
             if not self.vehicle.on_road:
                 damage = 1/2*self.vehicle.mass*np.linalg.norm(self.vehicle.state[[2,3], 0])**2
                 damage = damage / max_damage
