@@ -49,36 +49,40 @@ if __name__ == "__main__":
     env = gym.make('collision-v0')
     
     # Recommended Environment Hypertuning Parameters:
-    env.configure({
-        "duration": 15,  # [s]
-        "road_friction": 1.0,
-        "stopping_vehicles_count": 5,
-        "time_to_intervene": 6, # [s]
-        "time_after_collision": 0, # [s]
-        "vehicles_density": 2,
-        "vehicles_count": 25,
-        "control_time_after_avoid": 4, #[s]
-        "imminent_collision_distance": 7,  # [m] 
-        "reward_type": "penalty_dense"
-    })
+    # env.configure({
+    #     "duration": 15,  # [s]
+    #     "road_friction": 1.0,
+    #     "stopping_vehicles_count": 5,
+    #     "time_to_intervene": 6, # [s]
+    #     "time_after_collision": 0, # [s]
+    #     "vehicles_density": 2,
+    #     "vehicles_count": 25,
+    #     "control_time_after_avoid": 4, #[s]
+    #     "imminent_collision_distance": 7,  # [m]
+    #     "reward_type": "penalty_dense"
+    # })
 
     # Uncomment to check environment with OpenAi Gym:
     # check_env(env)
 
 
     # Batch simulation parameters
-    totalruns = 100  # number of runs, obviously
+    totalruns = 1000  # number of runs, obviously
     render_env = True  # whether to render the car
-    report_every = 10  # how often to report running progress Ex. every 5th run
+    report_every = 1  # how often to report running progress Ex. every 5th run
     do_training = False # whether to train a new model or use a saved one
-    model_name = 'PPO' # choose from:  'baseline' = deterministic hard braking, no steering always
+    model_name = 'baseline' # choose from:  'baseline' = deterministic hard braking, no steering always
                                         #   'PPO' = implements trained PPO if available, otherwise trains a PPO
                                         #   'A2C' = implements trained A2C if available, otherwise trains an A2C
+    from_zoo = True # modifier becomes version number
+
     debug = False # runs only 1 episode and plots outputs on baseline policy
 
     model_path = model_name.lower() + "_collision"
-    modifier = '3'
+    modifier = '77'
     model_path += modifier
+    if from_zoo:
+        model_path = r"../../rl-baselines3-zoo/logs/" + model_name.lower() + "/collision-v0_" + modifier + "/collision-v0.zip"
 
     reward_stats = []
     num_mitigated = 0
@@ -99,7 +103,7 @@ if __name__ == "__main__":
         if do_training:
             print("Training " + model_path)
             start = timeit.default_timer()
-            model.learn(total_timesteps=1000000, )
+            model.learn(total_timesteps=100000, )
             model.save(model_path)
             stop = timeit.default_timer()
             print("Training took", stop-start, "seconds.")
@@ -218,13 +222,14 @@ if __name__ == "__main__":
 
         env.close()
 
-        reward_stats.append(rewards[-1])
+        reward_stats.append(sum(rewards))
         num_no_interaction += end_state == 'none'
         num_crashed += end_state == 'crashed'
         num_mitigated += end_state == 'mitigated'
         num_offroad += end_state == 'offroad'
 
         if report_every and i%report_every == 0:
+            print(sum(rewards))
             print(end_state)
             this_run = timeit.default_timer()
             print('Average time per 1 simulation: ', (this_run - previous_run)/report_every, "seconds.")

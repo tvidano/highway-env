@@ -42,7 +42,7 @@ class CollisionEnv(HighwayEnv):
                 "type": "ContinuousAction",
                 "vehicle_class": CoupledDynamics
             },
-            "collision_avoided_reward": 1,
+            "collision_avoided_reward": 100,
             "collision_imminent_reward": .05,
             "collision_max_reward": 0.3,
             "collision_penalty": 1,
@@ -72,19 +72,20 @@ class CollisionEnv(HighwayEnv):
                 # "flatten": False,
                 # "observe_intentions": False,
             },
-            "offroad_terminal": True,
+            "offroad_terminal": False,
             "policy_frequency": 15,  # [Hz]
             "road_friction": 1.0,  # Road-tire coefficient of friction (0,1]
             "road_barriers": False,  # adds obstacles at the outside lane borders
             "simulation_frequency": 15,  # [Hz]
             "stopping_vehicles_count": 5,
             "time_after_collision": 0,  # [s] for capturing rear-end collisions
-            "time_to_intervene": 6,  # [s]
-            "vehicles_count": 25,
-            "vehicles_density": 2,
-            "control_time_after_avoid": 6,  # [s]
-            "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
-            "reward_type": "stop", # dense = reward is given on linear scale and for avoiding a collision.
+            "time_to_intervene": 6,
+            "vehicles_count": 40,
+            "reset_empty_lane": True, # moves a car in front if there isn't one
+            "vehicles_density": 1,
+            "control_time_after_avoid": 8,  # [s]
+            "imminent_collision_distance": 10,  # [m] within this distance is automatically imminent collisions, None for disabling this
+            "reward_type": "variant", # dense = reward is given on linear scale and for avoiding a collision.
                                      # sparse = reward is given ONLY for avoidance.
                                      # penalty = reward given for avoiding a collision, penalty given for collision
                                      # penalty_dense = reward for avoiding collision, penalize based on energy of crash and offroad
@@ -139,6 +140,20 @@ class CollisionEnv(HighwayEnv):
         for select_vehicle in select_vehicles:
             dist_from_ego = select_vehicle.position[0] - ego_pos_x
             select_vehicle.position[0] = ego_pos_x - dist_from_ego
+
+        if self.config["reset_empty_lane"]:
+            front_vehicle,_ = self.road.neighbour_vehicles(self.vehicle, self.vehicle.lane_index)
+            if not front_vehicle:
+                select_vehicles = self.road.np_random.choice(other_vehicles, \
+                                                             1, replace=False)
+                dist_from_ego = abs(select_vehicles[0].position[0] - ego_pos_x)
+                select_vehicles[0].position[0] = ego_pos_x + dist_from_ego
+                select_vehicles[0].position[1] = controlled_vehicle.position[1]
+                select_vehicles[0].velocity[0] = select_vehicles[0].velocity[0] - abs(select_vehicles[0].velocity[0] - controlled_vehicle.velocity[0])
+            else:
+                front_vehicle.velocity[0] = controlled_vehicle.velocity[0] - abs(front_vehicle.velocity[0] - controlled_vehicle.velocity[0])
+
+
 
     def step(self, action: Action) -> Tuple[ObservationType, float, bool, dict]:
         """
@@ -275,7 +290,7 @@ class CollisionEnv(HighwayEnv):
         
         duration_reached = self.time >= self.config["duration"]
         if avoidance_rew:
-            reward += self.config["collision_avoided_reward"] if duration_reached and not self.vehicle.crashed else 0
+            reward += self.config["collision_avoided_reward"] if duration_reached and not self.vehicle.crashed and self.vehicle.on_road else 0
         if imminent_collision_rew:
             reward += self.config["collision_imminent_reward"] if self.active != 0 else 0
         if damage_mitigation_rew:
@@ -318,15 +333,16 @@ class CollisionEnv(HighwayEnv):
             reward -= damage
         if variant:
             reward = 0
-            reward += self.time
+            reward += 0.25 * self.time
             if duration_reached and not self.vehicle.crashed:
                 reward += 500
             if self.active == 2:
-                reward += 10 - abs(self.vehicle.lateral_velocity)
+                reward += 10 - 2*abs(self.vehicle.lateral_velocity)
             if not self.vehicle.on_road:
-                reward = -15 * 0
+                reward = -min(self.road.network.get_lane(('0', '1', 0)).lat_distance(self.vehicle.position),\
+                                    self.road.network.get_lane(('0', '1', self.config["lanes_count"] - 1)).lat_distance(self.vehicle.position))
             if self.vehicle.crashed:
-                reward = -15
+                reward = -500
         if self.becomes_skynet:
             reward = -999999
         return reward
