@@ -84,7 +84,7 @@ class CollisionEnv(HighwayEnv):
             "stopping_vehicles_count": 5,
             "time_after_collision": 0,  # [s] for capturing rear-end collisions
             "time_to_intervene": 6,  # [s]
-            "vehicles_count": 5,
+            "vehicles_count": 15,
             "vehicles_density": 2,
             "control_time_after_avoid": 6,  # [s]
             "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
