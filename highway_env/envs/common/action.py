@@ -240,13 +240,9 @@ class DiscreteSafetyAction(ActionType):
             "steering": 0},
         2: {"acceleration": -1.0,
             "steering": 0},
-        3: {"acceleration": 0,
+        3: {"acceleration": -0.5,
             "steering": -0.5},
-        4: {"acceleration": 0,
-            "steering": 0.5},
-        5: {"acceleration": -1.0,
-            "steering": -0.5},
-        6: {"acceleration": -1.0,
+        4: {"acceleration": -0.5,
             "steering": 0.5}
     }
     def __init__(self, env: 'AbstractEnv', **kwargs) -> None:

@@ -215,6 +215,7 @@ class CoupledDynamics(Vehicle):
         self.yaw_rate = 0 # rad/s
         self.front_wheel_angular_velocity = self.longitudinal_velocity/self.wheel_radius
         self.tire_forces = np.array([self.front_tire.get_forces(), self.rear_tire.get_forces()])
+        self.slip_values = np.array([0, 0])
         self.is_braking = False
         self.is_steering = False
         self.delta = 0

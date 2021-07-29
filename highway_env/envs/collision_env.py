@@ -34,6 +34,9 @@ class CollisionEnv(HighwayEnv):
         self.becomes_skynet = False  # change to true if self becomes Skynet
         self.did_run = False
         self.prev_vel = self.config["initial_ego_speed"]
+        self.at_fault = False
+        if self.config["reward_type"] == "step_binary":
+            self.config["control_time_after_avoid"] == self.config["duration"] # for step binary, give control after activated
 
     @classmethod
     def default_config(cls) -> dict:
@@ -43,7 +46,7 @@ class CollisionEnv(HighwayEnv):
                 "type": "DiscreteSafetyAction", #,"ContinuousAction"
                 "vehicle_class": CoupledDynamics
             },
-            "collision_avoided_reward": 1,
+            "collision_avoided_reward": 100,
             "collision_imminent_reward": .05,
             "collision_max_reward": 0.3,
             "collision_penalty": 1,
@@ -81,7 +84,7 @@ class CollisionEnv(HighwayEnv):
             "stopping_vehicles_count": 5,
             "time_after_collision": 0,  # [s] for capturing rear-end collisions
             "time_to_intervene": 6,  # [s]
-            "vehicles_count": 15,
+            "vehicles_count": 5,
             "vehicles_density": 2,
             "control_time_after_avoid": 6,  # [s]
             "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
@@ -172,21 +175,13 @@ class CollisionEnv(HighwayEnv):
                     return obs, reward, terminal, info
                 else:
                     self.reset()
-
         else:
-            # if self.did_run = False:
-            # self.time = 0 <-- this could start the time at when the active starts
             self.did_run = True
 
         self.steps += 1
         self._simulate(action)
 
         obs = self.observation_type.observe()
-
-        #obs += 1 if self.active == 2 or self.active == 1 else 0
-        #obs += self.vehicle.position[0] # turns out that Kinematics gives this
-        #obs += self.vehicle.position[1]
-        #obs += self.vehicle.lane_index[-1]
 
         reward = self._reward(action)
         terminal = self._is_terminal()
@@ -215,7 +210,7 @@ class CollisionEnv(HighwayEnv):
         relative_distance = front_vehicle.position[0] - self.vehicle.position[0] if front_vehicle else np.inf
         if relative_distance > self.config["look_ahead_distance"]:
             return False
-        relative_x_velocity = front_vehicle.velocity[0] - self.vehicle.longitudinal_velocity
+        relative_x_velocity = front_vehicle.speed - self.vehicle.longitudinal_velocity
         self.time_to_collision = np.inf if relative_x_velocity >= 0 else (-relative_distance - self.vehicle.LENGTH)/ relative_x_velocity
         if self.config["imminent_collision_distance"]:
             return not self.time_to_collision > self.config["time_to_intervene"] or relative_distance < self.config["imminent_collision_distance"]
@@ -259,7 +254,7 @@ class CollisionEnv(HighwayEnv):
         reward = 0
         avoidance_rew = imminent_collision_rew = damage_mitigation_rew = survival_rew \
             = offroad_rew = velocity_rew = decel_rew = collision_pen = offroad_pen = damage_pen \
-            = variant = False
+            = variant = still_alive = False
         if self.config['reward_type'] == 'sparse':
             avoidance_rew = True
         elif self.config['reward_type'] == 'dense':
@@ -273,7 +268,9 @@ class CollisionEnv(HighwayEnv):
         elif self.config['reward_type'] == 'variant':
             variant = True
         elif self.config['reward_type'] == 'baby_it':
-            decel_rew = damage_pen = True
+            decel_rew = avoidance_rew = damage_pen = True
+        elif self.config['reward_type'] == 'step_binary':
+            still_alive = True
         else:
             raise(NotImplementedError, f'{self.config["reward_type"]} reward type not implemented or misstyped.')
         
@@ -300,8 +297,10 @@ class CollisionEnv(HighwayEnv):
         if velocity_rew and self._is_terminal():
             reward += -self.vehicle.longitudinal_velocity/self.config["initial_ego_speed"] + 1
         if decel_rew and self.vehicle.longitudinal_velocity < self.prev_vel:
-            reward += 0.1
+            reward += 1
             self.prev_vel = self.vehicle.longitudinal_velocity
+        if still_alive:
+            reward += 1 if not self.vehicle.crashed and self.vehicle.on_road else 0
 
         if collision_pen:
             reward -= self.config["collision_penalty"] if self.vehicle.crashed else 0
@@ -311,17 +310,17 @@ class CollisionEnv(HighwayEnv):
             reward -= self.config["off_road_penalty"] if not self.vehicle.on_road else 0
         if damage_pen:
             damage = 0
-            max_damage = (1/2*self.vehicle.mass*self.config["initial_ego_speed"]**2)/2
+            max_damage = (1/2*self.vehicle.mass*self.config["initial_ego_speed"]**2)
             if not self.vehicle.on_road:
                 damage = 1/2*self.vehicle.mass*np.linalg.norm(self.vehicle.state[[2,3], 0])**2
-                damage = damage / max_damage
+                damage = damage/1000 #/ max_damage
             if self.vehicle.crashed:
                 for collisions in self.vehicle.log:
                     v1 = collisions[0].speed
                     v2 = np.linalg.norm(self.vehicle.state[[2,3], 0])
                     Ei = 1/2*self.vehicle.mass*(v1**2 + v2**2)
                     Ef = self.vehicle.mass*(v1/2 + v2/2)**2
-                    damage += (Ei - Ef) / max_damage
+                    damage += (Ei - Ef)/1000 #/ max_damage
             reward -= damage
         if variant:
             reward = 0
@@ -361,10 +360,17 @@ class CollisionEnv(HighwayEnv):
         :param action: current action
         :return: info dict
         """
+        if self.vehicle.crashed:
+            other_x = self.vehicle.log[0][0].position[0]
+            if other_x > self.vehicle.position[0]:
+                self.at_fault = True
+            else:
+                self.at_fault = False
         info = {
             "action": action,
             "actuators": self.vehicle.actuators,
             "crashed": self.vehicle.crashed,
+            "at_fault": self.at_fault,
             "slip_values": self.vehicle.slip_values,
             "speed": np.array([self.vehicle.longitudinal_velocity, 
                                self.vehicle.lateral_velocity, 

@@ -517,8 +517,8 @@ class ADSObservation(ObservationType):
     def space(self) -> spaces.Space:
         """Get the observation space."""
         high = 1 if self.normalize else self.env.ROAD_LENGTH
-        return spaces.Box(low=np.array([0, 0, -np.inf, -np.inf, -np.inf, -np.inf, -np.pi/6, 0, 0, 0, 0, 0]), 
-                          high=np.array([self.env.ROAD_LENGTH, np.inf, np.inf, np.inf, np.inf, np.inf, 
+        return spaces.Box(low=np.array([0, 0, -2*np.pi, 0, -1e3, -1e3, -np.pi/6, 0, 0, 0, 0, 0]), 
+                          high=np.array([self.env.ROAD_LENGTH, 1e3, 2*np.pi, 1e3, 1e3, 1e3, 
                                          np.pi/6, self.maximum_range, self.maximum_range, 2, 1, 1]), 
                           dtype=np.float32)
 
