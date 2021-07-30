@@ -517,9 +517,8 @@ class ADSObservation(ObservationType):
     def space(self) -> spaces.Space:
         """Get the observation space."""
         high = 1 if self.normalize else self.env.ROAD_LENGTH
-        return spaces.Box(low=np.array([0, 0, -2*np.pi, 0, -1e3, -1e3, -np.pi/6, 0, 0, 0, 0, 0]), 
-                          high=np.array([self.env.ROAD_LENGTH, 1e3, 2*np.pi, 1e3, 1e3, 1e3, 
-                                         np.pi/6, self.maximum_range, self.maximum_range, 2, 1, 1]), 
+        return spaces.Box(low=np.array([0, 0, 0, 0]), 
+                          high=np.array([1e3, 2, 1, 1]), 
                           dtype=np.float32)
 
     def observe(self):
@@ -560,7 +559,7 @@ class ADSObservation(ObservationType):
                 left_open = (veh_states[0] - rear_veh.position[0]) > self.threshold
             except AttributeError:
                 left_open = True
-        return np.array([*veh_states, front_dist, rear_dist, current_lane, left_open, right_open])
+        return np.array([veh_states[2], front_dist, rear_dist, current_lane])
 
 
 def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:

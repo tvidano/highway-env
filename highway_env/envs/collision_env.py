@@ -81,11 +81,11 @@ class CollisionEnv(HighwayEnv):
             "road_friction": 1.0,  # Road-tire coefficient of friction (0,1]
             "road_barriers": False,  # adds obstacles at the outside lane borders
             "simulation_frequency": 30,  # [Hz]
-            "stopping_vehicles_count": 5,
+            "stopping_vehicles_count": 10,
             "time_after_collision": 0,  # [s] for capturing rear-end collisions
             "time_to_intervene": 6,  # [s]
-            "vehicles_count": 15,
-            "vehicles_density": 2,
+            "vehicles_count": 30,
+            "vehicles_density": 1.5,
             "control_time_after_avoid": 6,  # [s]
             "imminent_collision_distance": 7,  # [m] within this distance is automatically imminent collisions, None for disabling this
             "reward_type": "baby_it", # dense = reward is given on linear scale and for avoiding a collision.
@@ -268,7 +268,7 @@ class CollisionEnv(HighwayEnv):
         elif self.config['reward_type'] == 'variant':
             variant = True
         elif self.config['reward_type'] == 'baby_it':
-            decel_rew = avoidance_rew = damage_pen = True
+            decel_rew = True
         elif self.config['reward_type'] == 'step_binary':
             still_alive = True
         else:
@@ -296,9 +296,8 @@ class CollisionEnv(HighwayEnv):
             reward += self.config["off_road_reward"] if not self.vehicle.on_road else 0
         if velocity_rew and self._is_terminal():
             reward += -self.vehicle.longitudinal_velocity/self.config["initial_ego_speed"] + 1
-        if decel_rew and self.vehicle.longitudinal_velocity < self.prev_vel:
-            reward += 1
-            self.prev_vel = self.vehicle.longitudinal_velocity
+        if decel_rew:
+            reward += 1 - self.vehicle.longitudinal_velocity/self.config["initial_ego_speed"]
         if still_alive:
             reward += 1 if not self.vehicle.crashed and self.vehicle.on_road else 0
 
