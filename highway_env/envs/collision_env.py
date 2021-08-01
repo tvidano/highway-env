@@ -9,6 +9,7 @@ from highway_env.envs.common.action import Action
 from highway_env.envs.common.observation import ObservationType
 from highway_env.envs.highway_env import HighwayEnv
 from highway_env.road.road import Road, RoadNetwork
+from highway_env.road.lane import StraightLane
 from highway_env.vehicle.objects import Obstacle
 from highway_env.utils import near_split, relative_velocity
 from highway_env.vehicle.controller import ControlledVehicle
@@ -51,10 +52,10 @@ class CollisionEnv(HighwayEnv):
             "collision_sensitivity": 1/40,
             "controlled_vehicles": 1,
             "duration": 15, # [s]
-            "ego_spacing": 2,
+            "ego_spacing": 1.8,
             "initial_ego_speed": 20, # [m/s]
             "initial_lane_id": None,
-            "lanes_count": 3,
+            "lanes_count": 5,
             "look_ahead_distance": 50, # [m]
             "observation": {
                 "type": "ADSObservation", # "Kinematics" "LidarObservation" "ADSObservation"
@@ -73,16 +74,17 @@ class CollisionEnv(HighwayEnv):
                 # "observe_intentions": False,
             },
             "offroad_terminal": False,
-            "policy_frequency": 15,  # [Hz]
+            "policy_frequency": 30,  # [Hz]
             "road_friction": 1.0,  # Road-tire coefficient of friction (0,1]
             "road_barriers": False,  # adds obstacles at the outside lane borders
-            "simulation_frequency": 15,  # [Hz]
+            "lane_width": 6,  # None will set this to default of 4
+            "simulation_frequency": 30,  # [Hz]
             "stopping_vehicles_count": 5,
             "time_after_collision": 0,  # [s] for capturing rear-end collisions
-            "time_to_intervene": 6,
-            "vehicles_count": 40,
+            "time_to_intervene": 8,
+            "vehicles_count": 50,
             "reset_empty_lane": True, # moves a car in front if there isn't one
-            "vehicles_density": 1,
+            "vehicles_density": 2.5,
             "control_time_after_avoid": 8,  # [s]
             "imminent_collision_distance": 10,  # [m] within this distance is automatically imminent collisions, None for disabling this
             "reward_type": "variant", # dense = reward is given on linear scale and for avoiding a collision.
@@ -96,7 +98,8 @@ class CollisionEnv(HighwayEnv):
     def _create_road(self) -> None:
 
         """Create a road composed of straight adjacent lanes, and barrier objects at the edges"""
-        road = Road(network=RoadNetwork.straight_road_network(self.config["lanes_count"], speed_limit=30),
+        width = self.config["lane_width"] if self.config["lane_width"] else StraightLane.DEFAULT_WIDTH
+        road = Road(network=RoadNetwork.straight_road_network(self.config["lanes_count"], speed_limit=30,width=width),
                          np_random=self.np_random, record_history=self.config["show_trajectories"])
         if self.config['road_barriers']:
             road.objects.append(Obstacle(road, road.network.get_lane(('0', '1', 0)).position(0, 0), 10000, 0.5))

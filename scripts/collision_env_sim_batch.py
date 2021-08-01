@@ -71,7 +71,7 @@ if __name__ == "__main__":
     render_env = True  # whether to render the car
     report_every = 1  # how often to report running progress Ex. every 5th run
     do_training = False # whether to train a new model or use a saved one
-    model_name = 'baseline' # choose from:  'baseline' = deterministic hard braking, no steering always
+    model_name = 'PPO' # choose from:  'baseline' = deterministic hard braking, no steering always
                                         #   'PPO' = implements trained PPO if available, otherwise trains a PPO
                                         #   'A2C' = implements trained A2C if available, otherwise trains an A2C
     from_zoo = True # modifier becomes version number
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     debug = False # runs only 1 episode and plots outputs on baseline policy
 
     model_path = model_name.lower() + "_collision"
-    modifier = '77'
+    modifier = '109'
     model_path += modifier
     if from_zoo:
         model_path = r"../../rl-baselines3-zoo/logs/" + model_name.lower() + "/collision-v0_" + modifier + "/collision-v0.zip"
@@ -196,10 +196,7 @@ if __name__ == "__main__":
             else:
                 # Use just hard braking (will probably lock the wheel):
 
-                if info and info['active'] == 2:
-                    action = np.array([0.0, 0.0])
-                else:
-                    action = np.array([-1, 0.0])
+                action = np.array([-1, 0.0])
 
             obs, rew, done, info = env.step(action)
             rewards.append(rew)
