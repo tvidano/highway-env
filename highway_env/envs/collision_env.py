@@ -52,7 +52,7 @@ class CollisionEnv(HighwayEnv):
             "collision_sensitivity": 1/40,
             "controlled_vehicles": 1,
             "duration": 15, # [s]
-            "ego_spacing": 1.8,
+            "ego_spacing": 1.5,
             "initial_ego_speed": 20, # [m/s]
             "initial_lane_id": None,
             "lanes_count": 5,
@@ -82,12 +82,12 @@ class CollisionEnv(HighwayEnv):
             "stopping_vehicles_count": 5,
             "time_after_collision": 0,  # [s] for capturing rear-end collisions
             "time_to_intervene": 8,
-            "vehicles_count": 50,
+            "vehicles_count": 40,
             "reset_empty_lane": True, # moves a car in front if there isn't one
-            "vehicles_density": 2.5,
+            "vehicles_density": 1.75,
             "control_time_after_avoid": 8,  # [s]
             "imminent_collision_distance": 10,  # [m] within this distance is automatically imminent collisions, None for disabling this
-            "reward_type": "variant", # dense = reward is given on linear scale and for avoiding a collision.
+            "reward_type": "penalty_dense", # dense = reward is given on linear scale and for avoiding a collision.
                                      # sparse = reward is given ONLY for avoidance.
                                      # penalty = reward given for avoiding a collision, penalty given for collision
                                      # penalty_dense = reward for avoiding collision, penalize based on energy of crash and offroad
