@@ -82,11 +82,11 @@ class AbstractLane(object):
         :param position: a world position [m]
         :param longitudinal: (optional) the corresponding longitudinal lane coordinate, if known [m]
         :param lateral: (optional) the corresponding lateral lane coordinate, if known [m]
-        :return: Lateral distance from a lane.
+        :return: Lateral distance from a lane, 0 if in lane.
         """
         if longitudinal is None or lateral is None:
             longitudinal, lateral = self.local_coordinates(position)
-        return np.abs(lateral) - self.width_at(longitudinal) / 2
+        return max(np.abs(lateral) - self.width_at(longitudinal) / 2, 0)
 
     def is_reachable_from(self, position: np.ndarray) -> bool:
         """
