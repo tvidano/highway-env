@@ -1,3 +1,4 @@
+import gym
 import copy
 import importlib
 import itertools
@@ -312,3 +313,19 @@ def solve_trinom(a, b, c):
         return (-b - np.sqrt(delta)) / (2 * a), (-b + np.sqrt(delta)) / (2 * a)
     else:
         return None, None
+
+def register_id_once(id,entry_point,**kwargs):
+    env_list = gym.envs.registration.registry.env_specs.copy().keys()
+    if id not in env_list:
+        gym.envs.registration.registry.register(
+            id=id,
+            entry_point=entry_point,
+            **kwargs
+        )
+
+def relative_velocity(vehicle1, vehicle2):
+    projUonV = lambda u,v: (np.dot(u,v)/np.linalg.norm(v)**2)*v
+    relative_position = vehicle2.position - vehicle1.position
+    vehicle2_velocity = projUonV(vehicle2.velocity,relative_position)
+    vehicle1_velocity = projUonV(vehicle1.velocity,relative_position)
+    return vehicle2_velocity - vehicle1_velocity

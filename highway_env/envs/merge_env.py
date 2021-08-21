@@ -1,5 +1,4 @@
 import numpy as np
-from gym.envs.registration import register
 
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
@@ -124,7 +123,7 @@ class MergeEnv(AbstractEnv):
         self.vehicle = ego_vehicle
 
 
-register(
+utils.register_id_once(
     id='merge-v0',
     entry_point='highway_env.envs:MergeEnv',
 )
