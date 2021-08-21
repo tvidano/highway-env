@@ -6,7 +6,7 @@ import pandas as pd
 from highway_env import utils
 from highway_env.envs.common.finite_mdp import compute_ttc_grid
 from highway_env.envs.common.graphics import EnvViewer
-from highway_env.road.lane import AbstractLane
+from highway_env.road.lane import AbstractLane, StraightLane
 from highway_env.utils import distance_to_circle
 from highway_env.vehicle.controller import MDPVehicle
 
@@ -500,6 +500,38 @@ class LidarObservation(ObservationType):
     def index_to_direction(self, index: int) -> np.ndarray:
         return np.array([[np.cos(index * self.angle)], [np.sin(index * self.angle)]])
 
+class LidarKinematicObservation(LidarObservation):
+    """LidarKinematicObservation combines LidarObservation and ego vehicle's position and velocity."""
+
+    def __init__(self, env,
+                 ego_position: bool = True,
+                 ego_velocity: bool = True,
+                **kwargs):
+        super().__init__(env, **kwargs)
+        self.include_ego_pose = ego_position
+        self.include_ego_velo = ego_velocity
+        self.pose = np.array([0, 0]) if self.include_ego_pose else None
+        self.velo = np.array([0, 0]) if self.include_ego_velo else None
+
+    def space(self) -> spaces.Space:
+        high = 1 if self.normalize else self.maximum_range
+        return spaces.Box(shape=(self.cells + self.include_ego_velo + self.include_ego_pose, 2), low=-high, high=high, dtype=np.float32)
+
+    def observe(self) -> np.ndarray:
+        obs = super().observe()
+        if self.include_ego_pose:
+            self.pose = self.env.vehicle.position.reshape((1,2)).copy()
+            if self.normalize:
+                self.pose[(0,0)] = self.pose[(0,0)] / self.env.ROAD_LENGTH
+                self.pose[(0,1)] = self.pose[(0,1)] / (self.env.config["lanes_count"] * self.env.config["lane_width"] if self.env.config["lane_width"] else StraightLane.DEFAULT_WIDTH)
+            obs = np.vstack([obs, self.pose])
+        if self.include_ego_velo:
+            self.velo = self.env.vehicle.velocity.reshape((1, 2)).copy()
+            if self.normalize:
+                self.velo[(0, 0)] = self.velo[(0, 0)] / self.env.vehicle.MAX_SPEED
+                self.velo[(0, 1)] = self.velo[(0, 1)] / self.env.vehicle.MAX_SPEED
+            obs = np.vstack([obs, self.velo])
+        return obs
 
 def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
     if config["type"] == "TimeToCollision":
@@ -518,7 +550,10 @@ def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
         return MultiAgentObservation(env, **config)
     elif config["type"] == "LidarObservation":
         return LidarObservation(env, **config)
+    elif config["type"] == "LidarKinematicObservation":
+        return LidarKinematicObservation(env, **config)
     elif config["type"] == "ExitObservation":
         return ExitObservation(env, **config)
     else:
         raise ValueError("Unknown observation type")
+
