@@ -1,7 +1,7 @@
+from gym.envs.registration import register
 from gym import GoalEnv
 import numpy as np
 
-from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
 from highway_env.envs.common.observation import MultiAgentObservation
 from highway_env.road.lane import StraightLane, LineType
@@ -131,12 +131,12 @@ class ParkingEnvActionRepeat(ParkingEnv):
         super().__init__({"policy_frequency": 1, "duration": 20})
 
 
-utils.register_id_once(
+register(
     id='parking-v0',
     entry_point='highway_env.envs:ParkingEnv',
 )
 
-utils.register_id_once(
+register(
     id='parking-ActionRepeat-v0',
     entry_point='highway_env.envs:ParkingEnvActionRepeat'
 )

@@ -1,5 +1,6 @@
 from typing import Tuple
 
+from gym.envs.registration import register
 import numpy as np
 
 from highway_env import utils
@@ -181,7 +182,7 @@ class RoundaboutEnv(AbstractEnv):
         self.road.vehicles.append(vehicle)
 
 
-utils.register_id_once(
+register(
     id='roundabout-v0',
     entry_point='highway_env.envs:RoundaboutEnv',
 )

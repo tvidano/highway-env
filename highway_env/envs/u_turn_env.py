@@ -1,4 +1,5 @@
 import numpy as np
+from gym.envs.registration import register
 
 
 from highway_env import utils
@@ -207,7 +208,7 @@ class UTurnEnv(AbstractEnv):
         self.road.vehicles.append(vehicle)
 
 
-utils.register_id_once(
+register(
     id='u-turn-v0',
     entry_point='highway_env.envs:UTurnEnv'
 )

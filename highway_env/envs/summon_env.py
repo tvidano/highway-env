@@ -1,3 +1,4 @@
+from gym.envs.registration import register
 import numpy as np
 
 from highway_env import utils
@@ -120,13 +121,13 @@ class SummonEnvActionRepeat(SummonEnv):
         self.configure({"policy_frequency": 1})
 
 
-utils.register_id_once(
+register(
     id='summon-v0',
     entry_point='highway_env.envs:SummonEnv',
     max_episode_steps=100
 )
 
-utils.register_id_once(
+register(
     id='summon-ActionRepeat-v0',
     entry_point='highway_env.envs:SummonEnvActionRepeat',
     max_episode_steps=20
