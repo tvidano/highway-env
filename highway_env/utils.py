@@ -1,4 +1,4 @@
-import gym
+from gym.envs.registration import register, registry
 import copy
 import importlib
 import itertools
@@ -315,9 +315,9 @@ def solve_trinom(a, b, c):
         return None, None
 
 def register_id_once(id,entry_point,**kwargs):
-    env_list = gym.envs.registration.registry.env_specs.copy().keys()
+    env_list = registry.env_specs.copy().keys()
     if id not in env_list:
-        gym.envs.registration.registry.register(
+        register(
             id=id,
             entry_point=entry_point,
             **kwargs
