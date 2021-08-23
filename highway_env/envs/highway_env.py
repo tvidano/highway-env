@@ -1,5 +1,4 @@
 import numpy as np
-from gym.envs.registration import register
 
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
@@ -7,7 +6,6 @@ from highway_env.envs.common.action import Action
 from highway_env.road.road import Road, RoadNetwork
 from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
-
 
 class HighwayEnv(AbstractEnv):
     """
@@ -99,15 +97,15 @@ class HighwayEnv(AbstractEnv):
     def _is_terminal(self) -> bool:
         """The episode is over if the ego vehicle crashed or the time is out."""
         return self.vehicle.crashed or \
-            self.steps >= self.config["duration"] or \
-            (self.config["offroad_terminal"] and not self.vehicle.on_road)
+           self.steps >= self.config["duration"] or \
+           (self.config["offroad_terminal"] and not self.vehicle.on_road)
 
     def _cost(self, action: int) -> float:
         """The cost signal is the occurrence of collision."""
         return float(self.vehicle.crashed)
 
 
-register(
+utils.register_id_once(
     id='highway-v0',
     entry_point='highway_env.envs:HighwayEnv',
 )
