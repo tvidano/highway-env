@@ -215,6 +215,7 @@ class RoadNetwork(object):
     def straight_road_network(lanes: int = 4,
                               start: float = 0,
                               length: float = 10000,
+                              width: float = StraightLane.DEFAULT_WIDTH,
                               angle: float = 0,
                               speed_limit: float = 30,
                               nodes_str: Optional[Tuple[str, str]] = None,
@@ -223,14 +224,14 @@ class RoadNetwork(object):
         net = net or RoadNetwork()
         nodes_str = nodes_str or ("0", "1")
         for lane in range(lanes):
-            origin = np.array([start, lane * StraightLane.DEFAULT_WIDTH])
-            end = np.array([start + length, lane * StraightLane.DEFAULT_WIDTH])
+            origin = np.array([start, lane * width])
+            end = np.array([start + length, lane * width])
             rotation = np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
             origin = rotation @ origin
             end = rotation @ end
             line_types = [LineType.CONTINUOUS_LINE if lane == 0 else LineType.STRIPED,
                           LineType.CONTINUOUS_LINE if lane == lanes - 1 else LineType.NONE]
-            net.add_lane(*nodes_str, StraightLane(origin, end, line_types=line_types, speed_limit=speed_limit))
+            net.add_lane(*nodes_str, StraightLane(origin, end, line_types=line_types, speed_limit=speed_limit, width=width))
         return net
 
     def position_heading_along_route(self, route: Route, longitudinal: float, lateral: float) \
