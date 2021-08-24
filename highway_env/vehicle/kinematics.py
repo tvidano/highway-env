@@ -45,6 +45,7 @@ class Vehicle(RoadObject):
         self.impact = None
         self.log = []
         self.history = deque(maxlen=self.HISTORY_SIZE)
+        self.beta = 0
 
     @classmethod
     def make_on_lane(cls, road: Road, lane_index: LaneIndex, longitudinal: float, speed: float = 0) -> "Vehicle":
@@ -68,8 +69,8 @@ class Vehicle(RoadObject):
                       lane_from: Optional[str] = None,
                       lane_to: Optional[str] = None,
                       lane_id: Optional[int] = None,
-                      spacing: float = 1) \
-            -> "Vehicle":
+                      spacing: float = 1,
+                      **kwargs) -> "Vehicle":
         """
         Create a random vehicle on the road.
 
@@ -82,6 +83,7 @@ class Vehicle(RoadObject):
         :param lane_to: end node of the lane to spawn in
         :param lane_id: id of the lane to spawn in
         :param spacing: ratio of spacing to the front vehicle, 1 being the default
+        :param kwargs: additional arguments to be passed on to vehicle params
         :return: A vehicle with random position and/or speed
         """
         _from = lane_from or road.np_random.choice(list(road.network.graph.keys()))
@@ -98,7 +100,7 @@ class Vehicle(RoadObject):
         x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
             if len(road.vehicles) else 3*offset
         x0 += offset * road.np_random.uniform(0.9, 1.1)
-        v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)
+        v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed, **kwargs)
         return v
 
     @classmethod
@@ -135,22 +137,22 @@ class Vehicle(RoadObject):
         """
         self.clip_actions()
         delta_f = self.action['steering']
-        beta = np.arctan(1 / 2 * np.tan(delta_f))
-        v = self.speed * np.array([np.cos(self.heading + beta),
-                                   np.sin(self.heading + beta)])
+        self.beta = np.arctan(1 / 2 * np.tan(delta_f))
+        v = self.speed * np.array([np.cos(self.heading + self.beta),
+                                   np.sin(self.heading + self.beta)])
         self.position += v * dt
         if self.impact is not None:
             self.position += self.impact
             self.crashed = True
             self.impact = None
-        self.heading += self.speed * np.sin(beta) / (self.LENGTH / 2) * dt
+        self.heading += self.speed * np.sin(self.beta) / (self.LENGTH / 2) * dt
         self.speed += self.action['acceleration'] * dt
         self.on_state_update()
 
     def clip_actions(self) -> None:
         if self.crashed:
             self.action['steering'] = 0
-            self.action['acceleration'] = -1.0*self.speed
+            self.action['acceleration'] = -1.1*self.acc_max if self.speed > 0 else 0
         self.action['steering'] = float(self.action['steering'])
         self.action['acceleration'] = float(self.action['acceleration'])
         if self.speed > self.MAX_SPEED:
@@ -226,7 +228,7 @@ class Vehicle(RoadObject):
 
     @property
     def velocity(self) -> np.ndarray:
-        return self.speed * self.direction  # TODO: slip angle beta should be used here
+        return self.speed * np.array([np.cos(self.beta), np.sin(self.beta)]) * self.direction
 
     @property
     def destination(self) -> np.ndarray:
