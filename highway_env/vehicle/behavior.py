@@ -54,10 +54,28 @@ class IDMVehicle(ControlledVehicle):
                  target_speed: float = None,
                  route: Route = None,
                  enable_lane_change: bool = True,
-                 timer: float = None):
+                 timer: float = None,
+                 mu: float = 1.0,
+                 enable_mu: bool = False):  # If true, uses mu value above to calculate max acceleration allowed
         super().__init__(road, position, heading, speed, target_lane_index, target_speed, route)
         self.enable_lane_change = enable_lane_change
         self.timer = timer or (np.sum(self.position)*np.pi) % self.LANE_CHANGE_DELAY
+        self.mu = mu if enable_mu else None
+
+    @property
+    def mu(self) -> float:
+        return self._mu
+
+    @mu.setter
+    def mu(self, val):
+        if val < 0 or val > 1:
+            raise ValueError("Mu value must be between 0 and 1")
+        self._mu = val
+
+    @property
+    def acc_max(self) -> float:
+        # Longitudinal policy parameters
+        return (0.43 * self.mu + 0.07) * 9.81 if self.mu else self.ACC_MAX  # [g's] @1.0 gs = 0.5, @0.2 gs = 0.18; mu*0.425 + 0.075, m/s^2
 
     def randomize_behavior(self):
         self.DELTA = self.road.np_random.uniform(low=self.DELTA_RANGE[0], high=self.DELTA_RANGE[1])
@@ -109,7 +127,7 @@ class IDMVehicle(ControlledVehicle):
                                                         rear_vehicle=rear_vehicle)
             action['acceleration'] = min(action['acceleration'], target_idm_acceleration)
         # action['acceleration'] = self.recover_from_stop(action['acceleration'])
-        action['acceleration'] = np.clip(action['acceleration'], -self.ACC_MAX, self.ACC_MAX)
+        action['acceleration'] = np.clip(action['acceleration'], -self.acc_max, self.acc_max)
         Vehicle.act(self, action)  # Skip ControlledVehicle.act(), or the command will be overriden.
 
     def step(self, dt: float):
