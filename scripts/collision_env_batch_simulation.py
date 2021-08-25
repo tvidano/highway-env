@@ -34,9 +34,9 @@ if __name__ == "__main__":
     # Batch simulation parameters
     config = {
         "env_name": "collision-v0",
-        "num_runs": 10,
+        "num_runs": 1000,
         "render_env": True,         # whether to render the car
-        "report_every": 1,        # how often to report running progress Ex. every 5th run
+        "report_every": 100,        # how often to report running progress Ex. every 5th run
         "do_training": True,       # whether to train a new model or use a saved one
         "model": {
             "name": "PPO",     # choose from:  'baseline' = deterministic hard braking, no steering always
@@ -50,7 +50,7 @@ if __name__ == "__main__":
                 "n_epochs": 20,
                 "verbose": 1,
             },
-            "n_timesteps": 5000,   # how long to train the model for
+            "n_timesteps": 50000,   # how long to train the model for
             "from_zoo": False,       # identifier becomes rl-baselines-zoo model number and program looks for zoo file in logs folder
             "zoo_path": r"../../rl-baselines3-zoo",  # local path of rl-zoo directory
         },
