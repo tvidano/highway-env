@@ -234,7 +234,7 @@ class AbstractEnv(gym.Env):
 
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
-            self.time += 1 / self.config["simulation_frequency"]
+            self.time += 1
 
             # Automatically render intermediate simulation steps if a viewer has been launched
             # Ignored if the rendering is done offscreen
