@@ -1,6 +1,5 @@
 import numpy as np
 from typing import Tuple
-from gym.envs.registration import register
 
 from highway_env import utils
 from highway_env.envs import HighwayEnv, CircularLane
@@ -145,6 +144,6 @@ class ExitEnv(HighwayEnv):
 
 
 utils.register_id_once(
-    'exit-v0',
-    'highway_env.envs:ExitEnv'
+    id='exit-v0',
+    entry_point='highway_env.envs:ExitEnv',
 )

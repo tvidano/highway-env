@@ -1,5 +1,4 @@
 import numpy as np
-from gym.envs.registration import register
 
 
 from highway_env import utils
@@ -209,6 +208,6 @@ class UTurnEnv(AbstractEnv):
 
 
 utils.register_id_once(
-    'u-turn-v0',
-    'highway_env.envs:UTurnEnv'
+    id='u-turn-v0',
+    entry_point='highway_env.envs:UTurnEnv'
 )

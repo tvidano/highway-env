@@ -4,7 +4,6 @@ import copy
 from typing import Tuple
 
 import numpy as np
-from gym.envs.registration import register
 
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
@@ -149,7 +148,7 @@ class LaneKeepingEnv(AbstractEnv):
 
 
 utils.register_id_once(
-    'lane-keeping-v0',
-    'highway_env.envs:LaneKeepingEnv',
-    {'max_episode_steps':200}
+    id='lane-keeping-v0',
+    entry_point='highway_env.envs:LaneKeepingEnv',
+    max_episode_steps=200
 )

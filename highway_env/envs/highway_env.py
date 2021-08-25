@@ -1,5 +1,4 @@
 import numpy as np
-from gym.envs.registration import register
 
 from highway_env import utils
 from highway_env.envs.common.abstract import AbstractEnv
@@ -7,8 +6,6 @@ from highway_env.envs.common.action import Action
 from highway_env.road.road import Road, RoadNetwork
 from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
-
-import warnings
 
 class HighwayEnv(AbstractEnv):
     """
@@ -75,24 +72,9 @@ class HighwayEnv(AbstractEnv):
             self.road.vehicles.append(controlled_vehicle)
 
             for _ in range(others):
-                self.road.vehicles.append(
-                    other_vehicles_type.create_random(self.road, spacing=1 / self.config["vehicles_density"])
-                )
-    
-    def _choose_stopping_vehicles(self) -> None:
-        """Randomly choose non-controlled vehicles to stop abruptly at a random time."""
-        stopping_vehicles_count = self.config["stopping_vehicles_count"]
-        uncontrolled_vehicles = [vehicle for vehicle in self.road.vehicles if vehicle not in self.controlled_vehicles]
-        try:
-            chosen_vehicles = self.road.np_random.choice(uncontrolled_vehicles, stopping_vehicles_count, replace=False)
-        except ValueError:
-            warnings.warn(f'Chose {stopping_vehicles_count} vehicles to stop abruptly when only '
-                          f'{len(uncontrolled_vehicles)} vehicles are uncontrolled. '
-                          'Selecting all uncontrolled vehicles...')
-            chosen_vehicles = uncontrolled_vehicles
-        for chosen_vehicle in chosen_vehicles:
-            chosen_vehicle.target_speed = 0
-            
+                vehicle = other_vehicles_type.create_random(self.road, spacing=1 / self.config["vehicles_density"])
+                vehicle.randomize_behavior()
+                self.road.vehicles.append(vehicle)
 
     def _reward(self, action: Action) -> float:
         """
@@ -118,12 +100,15 @@ class HighwayEnv(AbstractEnv):
     def _is_terminal(self) -> bool:
         """The episode is over if the ego vehicle crashed or the time is out."""
         return self.vehicle.crashed or \
-            self.time >= self.config["duration"] or \
-            (self.config["offroad_terminal"] and not self.vehicle.on_road)
+           self.steps >= self.config["duration"] or \
+           (self.config["offroad_terminal"] and not self.vehicle.on_road)
 
     def _cost(self, action: int) -> float:
         """The cost signal is the occurrence of collision."""
         return float(self.vehicle.crashed)
 
 
-utils.register_id_once('highway-v0','highway_env.envs:HighwayEnv')
+utils.register_id_once(
+    id='highway-v0',
+    entry_point='highway_env.envs:HighwayEnv',
+)

@@ -32,6 +32,9 @@ class IDMVehicle(ControlledVehicle):
     DELTA = 4.0  # []
     """Exponent of the velocity term."""
 
+    DELTA_RANGE = [3.5, 4.5]
+    """Range of delta when chosen randomly."""
+
     # Lateral policy parameters
     POLITENESS = 0.  # in [0, 1]
     LANE_CHANGE_MIN_ACC_GAIN = 0.2  # [m/s2]
@@ -47,24 +50,31 @@ class IDMVehicle(ControlledVehicle):
                  target_speed: float = None,
                  route: Route = None,
                  enable_lane_change: bool = True,
-                 timer: float = None):
+                 timer: float = None,
+                 mu: float = 1.0,
+                 enable_mu: bool = False):  # If true, uses mu value above to calculate max acceleration allowed
         super().__init__(road, position, heading, speed, target_lane_index, target_speed, route)
         self.enable_lane_change = enable_lane_change
         self.timer = timer or (np.sum(self.position)*np.pi) % self.LANE_CHANGE_DELAY
-        # Longitudinal policy parameters
-        self.mu = 1.0 # tire-road coefficient of friction (0,1]
-        self.acc_max_g = 0.43*self.mu + 0.07 # [g's] @1.0 gs = 0.5, @0.2 gs = 0.18; mu*0.425 + 0.075
-        self._acc_max = self.acc_max_g*9.81 # [m/s2]
+        self.mu = mu if enable_mu else None
+
+    @property
+    def mu(self) -> float:
+        return self._mu
+
+    @mu.setter
+    def mu(self, val):
+        if val < 0 or val > 1:
+            raise ValueError("Mu value must be between 0 and 1")
+        self._mu = val
 
     @property
     def acc_max(self) -> float:
         # Longitudinal policy parameters
-        self.acc_max_g = 0.43*self.mu + 0.07 # [g's] @1.0 gs = 0.5, @0.2 gs = 0.18; mu*0.425 + 0.075
-        self._acc_max = self.acc_max_g*9.81 # [m/s2]
-        return self._acc_max
+        return (0.43 * self.mu + 0.07) * 9.81 if self.mu else self.ACC_MAX  # [g's] @1.0 gs = 0.5, @0.2 gs = 0.18; mu*0.425 + 0.075, m/s^2
 
     def randomize_behavior(self):
-        pass
+        self.DELTA = self.road.np_random.uniform(low=self.DELTA_RANGE[0], high=self.DELTA_RANGE[1])
 
     @classmethod
     def create_from(cls, vehicle: ControlledVehicle) -> "IDMVehicle":

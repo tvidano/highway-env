@@ -203,11 +203,11 @@ class KinematicObservation(ObservationType):
         # Add ego-vehicle
         df = pd.DataFrame.from_records([self.observer_vehicle.to_dict()])[self.features]
         # Add nearby traffic
-        # sort = self.order == "sorted"
         close_vehicles = self.env.road.close_vehicles_to(self.observer_vehicle,
                                                          self.env.PERCEPTION_DISTANCE,
                                                          count=self.vehicles_count - 1,
-                                                         see_behind=self.see_behind)
+                                                         see_behind=self.see_behind,
+                                                         sort=self.order == "sorted")
         if close_vehicles:
             origin = self.observer_vehicle if not self.absolute else None
             df = df.append(pd.DataFrame.from_records(
@@ -500,6 +500,38 @@ class LidarObservation(ObservationType):
     def index_to_direction(self, index: int) -> np.ndarray:
         return np.array([[np.cos(index * self.angle)], [np.sin(index * self.angle)]])
 
+class LidarKinematicObservation(LidarObservation):
+    """LidarKinematicObservation combines LidarObservation and ego vehicle's position and velocity."""
+
+    def __init__(self, env,
+                 ego_position: bool = True,
+                 ego_velocity: bool = True,
+                **kwargs):
+        super().__init__(env, **kwargs)
+        self.include_ego_pose = ego_position
+        self.include_ego_velo = ego_velocity
+        self.pose = np.array([0, 0]) if self.include_ego_pose else None
+        self.velo = np.array([0, 0]) if self.include_ego_velo else None
+
+    def space(self) -> spaces.Space:
+        high = 1 if self.normalize else self.maximum_range
+        return spaces.Box(shape=(self.cells + self.include_ego_velo + self.include_ego_pose, 2), low=-high, high=high, dtype=np.float32)
+
+    def observe(self) -> np.ndarray:
+        obs = super().observe()
+        if self.include_ego_pose:
+            self.pose = self.env.vehicle.position.reshape((1,2)).copy()
+            if self.normalize:
+                self.pose[(0,0)] = self.pose[(0,0)] / self.env.ROAD_LENGTH
+                self.pose[(0,1)] = self.pose[(0,1)] / (self.env.config["lanes_count"] * self.env.config["lane_width"] if self.env.config["lane_width"] else StraightLane.DEFAULT_WIDTH)
+            obs = np.vstack([obs, self.pose])
+        if self.include_ego_velo:
+            self.velo = self.env.vehicle.velocity.reshape((1, 2)).copy()
+            if self.normalize:
+                self.velo[(0, 0)] = self.velo[(0, 0)] / self.env.vehicle.MAX_SPEED
+                self.velo[(0, 1)] = self.velo[(0, 1)] / self.env.vehicle.MAX_SPEED
+            obs = np.vstack([obs, self.velo])
+        return obs
 
 class ADSObservation(LidarObservation):
     """Autonomous Driving System (ADS) observation ncludes LidarObservation and vehicle pose."""
@@ -547,9 +579,10 @@ def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
         return MultiAgentObservation(env, **config)
     elif config["type"] == "LidarObservation":
         return LidarObservation(env, **config)
-    elif config["type"] == "ADSObservation":
-        return ADSObservation(env, **config)
+    elif config["type"] == "LidarKinematicObservation":
+        return LidarKinematicObservation(env, **config)
     elif config["type"] == "ExitObservation":
         return ExitObservation(env, **config)
     else:
         raise ValueError("Unknown observation type")
+

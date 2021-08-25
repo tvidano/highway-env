@@ -1,4 +1,3 @@
-from gym.envs.registration import register
 from gym import GoalEnv
 import numpy as np
 
@@ -132,6 +131,12 @@ class ParkingEnvActionRepeat(ParkingEnv):
         super().__init__({"policy_frequency": 1, "duration": 20})
 
 
+utils.register_id_once(
+    id='parking-v0',
+    entry_point='highway_env.envs:ParkingEnv',
+)
 
-utils.register_id_once('parking-v0','highway_env.envs:ParkingEnv')
-utils.register_id_once('parking-ActionRepeat-v0','highway_env.envs:ParkingEnvActionRepeat')
+utils.register_id_once(
+    id='parking-ActionRepeat-v0',
+    entry_point='highway_env.envs:ParkingEnvActionRepeat'
+)

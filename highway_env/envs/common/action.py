@@ -113,13 +113,9 @@ class ContinuousAction(ActionType):
 
     @property
     def vehicle_class(self) -> Callable:
-
-        if self._vehicle_class is None:
-            return Vehicle if not self.dynamical else BicycleVehicle
-        elif self._vehicle_class is BicycleVehicle:
-            return BicycleVehicle
-        elif self._vehicle_class is CoupledDynamics:
-            return CoupledDynamics
+        if self._vehicle_class:
+            return self._vehicle_class
+        return Vehicle if not self.dynamical else BicycleVehicle
 
     def act(self, action: np.ndarray) -> None:
         if self.clip:
