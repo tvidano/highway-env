@@ -30,28 +30,41 @@ if 'highway_env' not in sys.modules:
 # ==================================
 
 if __name__ == "__main__":
-    env_name = 'collision-v0'
-    env = gym.make(env_name)
 
     # Batch simulation parameters
-    totalruns = 1000  # number of runs
-    render_env = True  # whether to render the car
-    report_every = 100  # how often to report running progress Ex. every 5th run
-    do_training = False  # whether to train a new model or use a saved one
+    config = {
+        "env_name": "collision-v0",
+        "num_runs": 10,
+        "render_env": True,         # whether to render the car
+        "report_every": 1,        # how often to report running progress Ex. every 5th run
+        "do_training": True,       # whether to train a new model or use a saved one
+        "model": {
+            "name": "PPO",     # choose from:  'baseline' = deterministic hard braking, no steering always
+                                    # 'PPO', 'A2C', 'DDPG', 'SAC', 'TD3', 'TQC' to train or load those models
+            "identifier": "",    # adds identifier to model name so multiple models can be stored
+            "params": {             # parameters to pass to model
+                "policy": "MlpPolicy",
+                "learning_rate": 0.003,
+                "n_steps": 2048,
+                "batch_size": 64,
+                "n_epochs": 20,
+                "verbose": 1,
+            },
+            "n_timesteps": 5000,   # how long to train the model for
+            "from_zoo": False,       # identifier becomes rl-baselines-zoo model number and program looks for zoo file in logs folder
+            "zoo_path": r"../../rl-baselines3-zoo",  # local path of rl-zoo directory
+        },
+        "debug": False,             # plots variables & vehicle data after each run
+    }
 
-    model_name = 'baseline' # choose from:  'baseline' = deterministic hard braking, no steering always
-                            # 'PPO', 'A2C', 'DDPG', 'SAC', 'TD3', 'TQC' to train or load those models
 
-    identifier = '145'  # adds identifier to model name so multiple models can be stored
 
-    from_zoo = True  # identifier becomes rl-baselines-zoo model number and program looks for zoo file in logs folder
-    zoo_path = r"../../rl-baselines3-zoo"  # local path of rl-zoo directory
+    env = gym.make(config["env_name"])
 
-    model_path = f"{model_name.lower()}_collision_{identifier}"
-    if from_zoo:
-        model_path = f"{zoo_path}/logs/{model_name.lower()}/{env_name}_{identifier}/{env_name}.zip"
-
-    debug = False  # plots run variables
+    model_path = rf"{config['model']['name'].lower()}_collision{config['model']['identifier']}"
+    if config["model"]["from_zoo"]:
+        model_path = rf"""{config['model']['zoo_path']}/logs/{config['model']['name'].lower()}/{config['env_name']
+            }_{config['model']['identifier']}/{config['env_name']}.zip"""
 
     # Statistics collection variables
     reward_stats = []
@@ -60,88 +73,38 @@ if __name__ == "__main__":
     num_no_interaction = 0
     num_offroad = 0
 
-    if model_name == 'baseline':
+    if config['model']['name'] == 'baseline':
         model = None
+    else:
+        if config['model']['name'] in ['PPO', 'A2C', 'DDPG', 'SAC', 'TD3', 'TQC'] and globals()[config['model']['name']]:
+            model = globals()[config['model']['name']](**config['model']['params'], env=config["env_name"])
+        else:
+            print("Invalid model name, using baseline")
+            model = None
 
-    elif model_name == 'PPO':
-        model = PPO("MlpPolicy", env, learning_rate=0.003, n_steps=2048, batch_size=64, n_epochs=20, verbose=1, device='cuda')
-        if do_training:
+    if model:
+        if config["do_training"]:
             print("Training " + model_path)
             start = timeit.default_timer()
-            model.learn(total_timesteps=100000, )
+            model.learn(total_timesteps=config["model"]["n_timesteps"], )
             model.save(model_path)
             stop = timeit.default_timer()
-            print("Training took", stop-start, "seconds.")
+            print(f"Training took {stop - start} seconds.")
         model.load(model_path)
-        print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path +".zip")}\n')
+        print(f"Loaded {config['model']['name']} from {os.path.join(os.getcwd(), model_path + '.zip')}\n")
 
-    elif model_name == 'A2C':
-        model = A2C("MlpPolicy", env, learning_rate=0.003, n_steps=2048,verbose=1)
-        if do_training:
-            start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
-            model.save(model_path)
-            stop = timeit.default_timer()
-            print("Training took", stop - start, "seconds.")
-        model.load(model_path)
-        print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path +".zip")}\n')
-
-    elif model_name == 'DDPG':
-        model = DDPG("MlpPolicy", env, learning_rate=0.003, batch_size=100, verbose=1)
-        if do_training:
-            start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
-            model.save(model_path)
-            stop = timeit.default_timer()
-            print("Training took", stop - start, "seconds.")
-        model.load(model_path)
-        print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path + ".zip")}\n')
-
-    elif model_name == 'SAC':
-        model = SAC("MlpPolicy", env, learning_rate=0.003, batch_size=256, verbose=1)
-        if do_training:
-            start = timeit.default_timer()
-            model.learn(total_timesteps=500000, )
-            model.save(model_path)
-            stop = timeit.default_timer()
-            print("Training took", stop - start, "seconds.")
-        model.load(model_path)
-        print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path + ".zip")}\n')
-
-    elif model_name == 'TD3':
-        model = TD3("MlpPolicy", env, learning_rate=0.003, batch_size=100, verbose=1)
-        if do_training:
-            start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
-            model.save(model_path)
-            stop = timeit.default_timer()
-            print("Training took", stop - start, "seconds.")
-        model.load(model_path)
-        print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path + ".zip")}\n')
-
-    elif model_name == 'TQC':
-        model = TQC("MlpPolicy", env, learning_rate=0.003, batch_size=256, verbose=1)
-        if do_training:
-            start = timeit.default_timer()
-            model.learn(total_timesteps=50000, )
-            model.save(model_path)
-            stop = timeit.default_timer()
-            print("Training took", stop - start, "seconds.")
-        model.load(model_path)
-        print(f'Loaded {model_name} from {os.path.join(os.getcwd(), model_path + ".zip")}\n')
-
-    print("Model", model_name, "trained/loaded")
+    print(f"Using {config['model']['name']}, starting run 0...")
 
     previous_run = timeit.default_timer()
-    for i in range(totalruns):
+    for i in range(config["num_runs"]):
 
-        if report_every and (i+1)%report_every==0:
+        if config["report_every"] and (i+1)%config["report_every"]==0:
             print("Run number ", i+1)
 
         obs = env.reset()
-        if render_env:
+        if config["render_env"]:
             env.render()
-        if debug:
+        if config["debug"]:
             times = []
             actions = []
             actuators = []
@@ -166,7 +129,7 @@ if __name__ == "__main__":
             obs, rew, done, info = env.step(action)
 
             rewards.append(rew)
-            if debug:
+            if config["debug"]:
                 times.append(info["time"])
                 actions.append(info["action"])
                 actuators.append(info["actuators"])
@@ -189,15 +152,15 @@ if __name__ == "__main__":
         num_mitigated += end_state == 'mitigated'
         num_offroad += end_state == 'offroad'
 
-        if report_every and (i+1)%report_every == 0:
+        if config["report_every"] and (i+1)%config["report_every"] == 0:
             print(f"Reward: {sum(rewards)}, End State: {end_state}")
             this_run = timeit.default_timer()
-            print(f"Average time per 1 simulation: {(this_run - previous_run)/report_every} seconds.")
+            print(f"Average time per 1 simulation: {(this_run - previous_run)/config['report_every']} seconds.")
             previous_run = this_run
 
 
-    print(f"Using:\t\t\t{model_name}")
-    print(f"Episodes:\t\t{totalruns}")
+    print(f"Using:\t\t\t{config['model']['name']}")
+    print(f"Episodes:\t\t{config['num_runs']}")
     print(f"Average reward:\t\t{sum(reward_stats)/len(reward_stats)}")
     print(f"Dummy Episodes:\t\t{num_no_interaction}")  # Episodes where no engagements occur
     print(f"Crashes:\t\t{num_crashed}")
@@ -205,7 +168,7 @@ if __name__ == "__main__":
     print(f"Collisions avoided:\t{num_mitigated}")
     print(f"Avoidance rate:\t\t{num_mitigated/(num_crashed+num_mitigated+num_offroad)*100}%")
 
-    if debug:
+    if config["debug"]:
         velocity = np.vstack(velocity)
         forces = np.vstack(forces)
         slips = np.vstack(slips)
