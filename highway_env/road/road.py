@@ -214,6 +214,7 @@ class RoadNetwork(object):
     @staticmethod
     def straight_road_network(lanes: int = 4,
                               start: float = 0,
+                              width: float = StraightLane.DEFAULT_WIDTH,
                               length: float = 10000,
                               width: float = StraightLane.DEFAULT_WIDTH,
                               angle: float = 0,
