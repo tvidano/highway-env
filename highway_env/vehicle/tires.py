@@ -10,6 +10,7 @@ class AbstractTire(object):
         self.configure(params)
         self.state = init_state if init_state is not None else np.array([0, 0])
 
+
     def default_params(self):
         """Physically reasonable tire parameters."""
         raise NotImplementedError
@@ -27,6 +28,7 @@ class AbstractTire(object):
     def state(self, new_state) -> None:
         assert (new_state.size == 2)
         assert (1 >= new_state[0] >= -1)
+        
         self._state = new_state
 
     def get_forces(self) -> np.ndarray:
@@ -53,7 +55,8 @@ class LinearTire(AbstractTire):
             "lat_stiffness": 15
         }
         return params
-
+      
+      
     def get_forces(self) -> np.ndarray:
         long_force = self.params["long_stiffness"] * self.state
         lat_force = self.params["lat_stiffness"] * self.state
