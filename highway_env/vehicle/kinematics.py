@@ -182,9 +182,6 @@ class Vehicle(RoadObject):
                 return
             intersecting, will_intersect, transition = self._is_colliding(other, dt)
             if will_intersect:
-                relative_velocity = np.linalg.norm(utils.relative_velocity(self,other))
-                if other not in [log[0] for log in self.log]:
-                    self.log.append((other,relative_velocity))
                 self.impact = transition / 2
                 other.impact = -transition / 2
             if intersecting:

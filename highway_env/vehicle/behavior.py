@@ -17,6 +17,10 @@ class IDMVehicle(ControlledVehicle):
     - Lateral: the MOBIL model decides when to change lane by maximizing the acceleration of nearby vehicles.
     """
 
+    # Longitudinal policy parameters
+    ACC_MAX = 6.0  # [m/s2]
+    """Maximum acceleration."""
+
     COMFORT_ACC_MAX = 3.0  # [m/s2]
     """Desired maximum acceleration."""
 

@@ -533,35 +533,6 @@ class LidarKinematicObservation(LidarObservation):
             obs = np.vstack([obs, self.velo])
         return obs
 
-class ADSObservation(LidarObservation):
-    """Autonomous Driving System (ADS) observation ncludes LidarObservation and vehicle pose."""
-
-    def __init__(self, env,
-                cells: int = 16,
-                maximum_range: float = 60,
-                normalize: bool = True,
-                **kwargs):
-        super().__init__(env, cells, maximum_range, normalize, **kwargs)
-        self.pose = np.array([0, 0])
-        self.velo = np.array([0, 0])
-
-    def space(self) -> spaces.Space:
-        high = 1 if self.normalize else self.maximum_range
-        return spaces.Box(shape=(self.cells + 2, 2), low=-high, high=high, dtype=np.float32)
-
-    def observe(self) -> np.ndarray:
-        lidarObs = super().observe()
-        self.pose = self.env.vehicle.position.reshape((1,2)).copy()
-        if self.normalize:
-            self.pose[(0,0)] = self.pose[(0,0)] / self.env.ROAD_LENGTH
-            self.pose[(0,1)] = self.pose[(0,1)] / (self.env.config["lanes_count"] * self.env.config["lane_width"] if self.env.config["lane_width"] else StraightLane.DEFAULT_WIDTH)
-        self.velo = self.env.vehicle.velocity.reshape((1, 2)).copy()
-        if self.normalize:
-            self.velo[(0, 0)] = self.velo[(0, 0)] / self.env.vehicle.MAX_SPEED
-            self.velo[(0, 1)] = self.velo[(0, 1)] / self.env.vehicle.MAX_SPEED
-        return np.vstack([lidarObs, self.pose, self.velo])
-
-
 def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:
     if config["type"] == "TimeToCollision":
         return TimeToCollisionObservation(env, **config)

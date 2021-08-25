@@ -25,7 +25,6 @@ class HighwayEnv(AbstractEnv):
             "action": {
                 "type": "DiscreteMetaAction",
             },
-            "initial_ego_speed": 25,
             "lanes_count": 4,
             "vehicles_count": 50,
             "controlled_vehicles": 1,
@@ -40,15 +39,13 @@ class HighwayEnv(AbstractEnv):
                                        # lower speeds according to config["reward_speed_range"].
             "lane_change_reward": 0,   # The reward received at each lane change action.
             "reward_speed_range": [20, 30],
-            "offroad_terminal": False,
-            "stopping_vehicles_count": 0
+            "offroad_terminal": False
         })
         return config
 
     def _reset(self) -> None:
         self._create_road()
         self._create_vehicles()
-        self._choose_stopping_vehicles()
 
     def _create_road(self) -> None:
         """Create a road composed of straight adjacent lanes."""
@@ -64,7 +61,7 @@ class HighwayEnv(AbstractEnv):
         for others in other_per_controlled:
             controlled_vehicle = self.action_type.vehicle_class.create_random(
                 self.road,
-                speed=self.config["initial_ego_speed"],
+                speed=25,
                 lane_id=self.config["initial_lane_id"],
                 spacing=self.config["ego_spacing"]
             )
