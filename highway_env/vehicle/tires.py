@@ -8,7 +8,7 @@ class AbstractTire(object):
         # Configure
         self.params = self.default_params()
         self.configure(params)
-        self.state = init_state if init_state else np.array([0, 0])
+        self.state = init_state if init_state is not None else np.array([0, 0])
 
     def default_params(self):
         """Physically reasonable tire parameters."""
