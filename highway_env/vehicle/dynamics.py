@@ -227,7 +227,8 @@ class CoupledDynamics(Vehicle):
         self.front_tire = tire(init_state=np.array([0,0,self.Fz_front,self.mu]))
         self.rear_tire = tire(init_state=np.array([0,0,self.Fz_rear,self.mu]))
 
-        self.longitudinal_velocity = self.speed # m/s
+        self.longitudinal_velocity = self.speed  # m/s
+        self.front_wheel_angular_velocity = self.longitudinal_velocity/self.wheel_radius  # rad/s
         self.lateral_velocity = 0  # m/s
         self.yaw_rate = 0  # rad/s
         self.tire_forces = np.array([self.front_tire.get_forces(), self.rear_tire.get_forces()])
