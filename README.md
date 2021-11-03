@@ -8,6 +8,22 @@
 [![GitHub contributors](https://img.shields.io/github/contributors/eleurent/highway-env)](https://github.com/eleurent/highway-env/graphs/contributors)
 [![Environments](https://img.shields.io/github/search/eleurent/highway-env/import%20filename:*_env%20path:highway_env/envs?label=environments)](#the-environments)
 
+# MAE 252: Autonomous Robotics Class Project
+
+Clone this repository so that you can start working on getting the adaptive sensor project done. The main branch that we will use is
+- `feature/adaptive_sensing`. 
+    -There is restrictions on pushing to this branch, in that a pull request must be made. This way you cannot commit
+your code without having someone else check it. This is useful for protecting the functionality of the code and prevent mistakes. 
+
+I suggest you make a branch off of `feature/adaptive_sensing` and begin your work in that new branch. For instance:
+```
+git branch tvidano/adaptive_sensing
+git checkout tvidano/adaptive_sensing
+```
+
+This way you can keep a separate branch of your changes and then when you have completed your changes and verified that they work as expected, you can open
+a pull request to change the main code. At the end of this project we should have the completed project ready to go in `feature/adaptive_sensing`. 
+
 A collection of environments for *autonomous driving* and tactical decision-making tasks
 
 <p align="center">
