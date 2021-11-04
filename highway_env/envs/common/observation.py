@@ -600,18 +600,30 @@ class LidarObservation(ObservationType):
     def index_to_direction(self, index: int) -> np.ndarray:
         return np.array([[np.cos(index * self.angle)], [np.sin(index * self.angle)]])
     
-def AdaptiveLidarObservation(LidarObservation):
+class AdaptiveLidarObservation(LidarObservation):
     """
-    Lidar that collects data from all traces at a base frequency, and selected
-    traces at a higher frequency when called.
+    Lidar that collects data from all indices at a base frequency, and selected
+    indices at a higher frequency when called.
     """
-    def observe(self, traces) -> np.ndarray:
+
+    def __init__(self, env,
+                 cells: int = 16,
+                 maximum_range: float = 60,
+                 normalize: bool = False,
+                 **kwargs):
+        super().__init__(env, **kwargs)
+
+    def selectively_observe(self, indices: list = None) -> np.ndarray:
         """
-        Collect data from select [traces]. If traces is undefined, all traces
-        are collected. Returns lidar points in global coordinates.
+        Collect data from select |indices|. If |indices| is undefined, all
+        indices are collected. Returns lidar points in global coordinates.
+
+        :param indices: the list of indices of the lidar array to be updated.
+        :return: the lidar data corresponding to the indices.
         """
-        # self.observe() should collect data from all traces
-        # self.observe([0,1,2]) should collect data from 0, 1, 2 traces.
+        # 1. call self.observe()
+        # 2. get rows of the selected |indices|. 
+        # 3. return those rows.
         return NotImplementedError
 
 

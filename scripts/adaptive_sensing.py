@@ -50,8 +50,9 @@ from rl_agents.agents.common.factory import agent_factory
 #                                # speed, linearly mapped to zero for lower
 #                                # speeds according to
 #                                # config["reward_speed_range"].
-#     "collision_reward": -0.5,   # The reward received when colliding with a 
+#     "collision_reward": -0.1,   # The reward received when colliding with a 
 #                                # vehicle.
+#     "lane_change_reward": 0.4,
 #     })
 # #env = RecordVideo(env, "videos") 
 # obs, done = env.reset(), False
@@ -114,6 +115,7 @@ from rl_agents.agents.common.factory import agent_factory
 # lidar samples taken. This way we can compare the number of lidar samples
 # taken and the resulting performance.
 
+###############################################################################
 # Run a single episode:
 env = gym.make("highway-lidar-v0")
 # env = RecordVideo(env, "videos") 
@@ -138,31 +140,70 @@ while not done:
 env.close()
 # env.close_video_recorder()
 
+###############################################################################
+# Make agent for control and test group
+agent_config = {
+    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
+    "env_preprocessors": [{"method":"simplify"}],
+    "display_tree": True,
+    "budget": 50,
+    "gamma": 0.7,
+}
+agent = agent_factory(env, agent_config)
+
+###############################################################################
 # Begin control group simulation here:
 env = gym.make("highway-lidar-v0")
 env.configure({
             "adaptive_observations": False,
             })
-num_episodes = 100
-for i in num_episodes:
+
+# Create statistics variables
+control_collisions = 0
+control_rewards = []
+control_lidar_samples = []
+
+num_episodes = 1000
+for _ in num_episodes:
     # Add data collection here
     done = False
+    episode_reward = 0
+    obs = env.reset()
     while not done:
         action = agent.act(obs)
         obs, reward, done, info = env.step(action)
-    env.close()
-    
-# Begin test group simulation here:
-# Need to figure out how to implement the discrete reactive sensor sampling
-# scheme with the existing planner.
-env = gym.make("highway-lidar-v0")
-for i in num_episodes:
-    # Add data collection here
-    done = False
-    while not done:
-        action = agent.act(obs)
-        obs, reward, done, info = env.step(action)
+        episode_reward += reward
+    control_collisions += float(env.vehicle.crashed)
+    control_rewards.append(episode_reward)
+    control_lidar_samples.append(env.lidar_count)
     env.close()
 
+###############################################################################
+# Begin test group simulation here:
+env = gym.make("highway-lidar-v0")
+env.configure({
+            "adaptive_observations": True,
+            })
+
+# Create statistics variables
+test_collisions = 0
+test_rewards = []
+test_lidar_samples = []
+
+for _ in num_episodes:
+    # Add data collection here
+    done = False
+    episode_reward = 0
+    obs = env.reset()
+    while not done:
+        action = agent.act(obs)
+        obs, reward, done, info = env.step(action)
+        episode_reward += reward
+    test_collisions += float(env.vehicle.crashed)
+    test_rewards.append(episode_reward)
+    test_lidar_samples.append(env.lidar_count)
+    env.close()
+
+###############################################################################
 # Begin data analysis here:
 # Maybe a bar chart comparing the three metrics we are looking?
