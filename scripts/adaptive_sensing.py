@@ -138,7 +138,7 @@ while not done:
 env.close()
 # env.close_video_recorder()
 
-Begin control group simulation here:
+# Begin control group simulation here:
 env = gym.make("highway-lidar-v0")
 env.configure({
             "adaptive_observations": False,
@@ -152,9 +152,9 @@ for i in num_episodes:
         obs, reward, done, info = env.step(action)
     env.close()
     
-Begin test group simulation here:
-Need to figure out how to implement the discrete reactive sensor sampling
-scheme with the existing planner.
+# Begin test group simulation here:
+# Need to figure out how to implement the discrete reactive sensor sampling
+# scheme with the existing planner.
 env = gym.make("highway-lidar-v0")
 for i in num_episodes:
     # Add data collection here
