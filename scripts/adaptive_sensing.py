@@ -6,10 +6,10 @@ applied to autonomous vehicles.
 # Environment
 import gym # 0.21.0
 import sys
-import os
+import os.path as op
 # use local version of highway_env, before simulation you should be told this
 # is a local version.
-local_highway_env = os.path.join(os.getcwd(),"..",)
+local_highway_env = op.join(op.dirname(op.realpath(__file__)),"..",)
 sys.path.insert(1, local_highway_env)
 import highway_env
 from gym.wrappers import RecordVideo, RecordEpisodeStatistics
@@ -17,78 +17,94 @@ from gym.wrappers import RecordVideo, RecordEpisodeStatistics
 # Agent
 from rl_agents.agents.common.factory import agent_factory
 
-# Visualisation
-import sys
-scripts_path = os.path.join(os.getcwd(),"highway-env","scripts",)
-sys.path.insert(0, scripts_path)
-
 # Debugging Tools (uncomment to not show debugging logs)
 # import logging
 # logging.basicConfig(level=logging.warning)
 
-# Make environment (experimenting right now)
-env = gym.make("highway-fast-v0") # we will likely be changing the config of this env.
-f_policy = .5
-f_sim = 10 * f_policy
-t_duration = 30 * f_policy
-env.configure({
-    "observation": {
-            "type": "LidarObservation"
-            },
-    "simulation_frequency": f_sim, # [Hz]
-    "policy_frequency": f_policy,  # [Hz]
-    "duration": t_duration,  # [steps per episode]
-    "vehicles_density": 1.5,
-    "show_trajectories": False,            
-    "right_lane_reward": 0.0,  # The reward received when driving on the right-most lanes, linearly mapped to
-                               # zero for other lanes.            
-    "high_speed_reward": 0.0,  # The reward received when driving at full speed, linearly mapped to zero for
-                               # lower speeds according to config["reward_speed_range"].
-    "collision_reward": 0.0,    # The reward received when colliding with a vehicle.
-    })
-#env = RecordVideo(env, "videos")
-obs, done = env.reset(), False
+###############################################################################
+# To get started, comment out everything below this section and play around
+# with this code. You should dive deeper into the code to understand how the
+# original reward function affects the ego-vehicle's behavior. 
+# Once you're done playing around and understand somewhat of how the simulation
+# is structured, comment out this part so that you can run the simulations.
+###############################################################################
+# # Make environment (experimenting right now)
+# env = gym.make("highway-fast-v0") 
+# f_policy = .5 
+# f_sim = 10 * f_policy
+# t_duration = 30 * f_policy 
+# env.configure(
+#     {"observation": 
+#         {"type":
+#             "LidarObservation"
+#         },
+#     "simulation_frequency": f_sim, # [Hz]
+#     "policy_frequency": f_policy,  # [Hz]
+#     "duration": t_duration,  # [steps per episode]
+#     "vehicles_density": 1.5,
+#     "show_trajectories": False,            
+#     "right_lane_reward": 0.0,  # The reward received when driving on the right-
+#                                # most lanes, linearly mapped to zero for other
+#                                # lanes.            
+#     "high_speed_reward": 0.4,  # The reward received when driving at full 
+#                                # speed, linearly mapped to zero for lower
+#                                # speeds according to
+#                                # config["reward_speed_range"].
+#     "collision_reward": -0.1,   # The reward received when colliding with a 
+#                                # vehicle.
+#     "lane_change_reward": 0.4,
+#     })
+# #env = RecordVideo(env, "videos") 
+# obs, done = env.reset(), False
 
-# We will likely have to change the reward function. The reward function 
-# currently in place encourages maintaining a high speeds, staying in the 
-# right lane, and not colliding with other vehicles. We might need to make the
-# collision reward more based on distance between other vehicles to encourage
-# obstacle avoidance more.
+# # Make agent
+# agent_config = {
+#     "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
+#     "env_preprocessors": [{"method":"simplify"}],
+#     "display_tree": True,
+#     "budget": 20,
+#     "gamma": 0.7,
+# }
+# agent = agent_factory(env, agent_config)
 
-# Make agent
-agent_config = {
-    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
-    "env_preprocessors": [{"method":"simplify"}],
-    "display_tree": True,
-    "budget": 20,
-    "gamma": 0.7,
-}
-agent = agent_factory(env, agent_config)
+# while not done:
+#     action = agent.act(obs)
+#     obs, reward, done, info = env.step(action)
+#     env.render()
+# env.close()
 
-# We currently have a problem with using this planner. It appears that it does
-# not rely on observations. Instead it uses the environment to predict 
-# what will happen in the future by expanding each node with all possible
-# actions. The value appears to be independent of the observations, and so the
-# choice of actions is also independent of observations. What we will have to
-# do is change the reward function so that it is dependent on observations.
-# One way to do this is change the reward function so that it is a function
-# of the euclidean distance between the ego vehicle and the surrounding 
-# vehicles. Since the surrounding vehicles will be detected by lidar points
-# we will actually find the closest lidar point within the ego-vehicle's lane
-# and then use that as a cost function. We can also include a fast-speed
-# reward to encourage the vehicle not to just come to a stop, but to navigate
-# traffic efficiently.
+###############################################################################
+# Proposed simulation design
+###############################################################################
+# This planner does not rely on observations. Instead, it uses copies of the 
+# environment to predict what will happen in the future by stepping forward in 
+# time with all possible actions. The value of each state is independent of the 
+# observations, because the reward function does not depend on the
+# observations. What we will have to do is change the reward function so that 
+# it is dependent on observations.
+# I think the easiest way to do this is to punish the closest distance between
+# the ego-vehicle and a buffered lidar point. The reward should also only care
+# about the lidar points within its own lane. If we consider lidar points in
+# other lanes then the ego-vehicle will steer away from vehicles in the
+# neighboring lane. We should also reward maintaining a fast-speed to encourage
+# the vehicle not to just come to a stop, but to navigate traffic efficiently.
+# The key aspect of this is that the reward is based on 'buffered' lidar
+# points. This means that the lidar points need to be stored so that they can
+# be observered asynchronously (at different sampling rates). This will allow
+# us to create the adaptive sampling controller discussed in the paper.
 
-##############################################################################
+###############################################################################
 # Start experiment script here
-##############################################################################
-# (1) Create an experiment that runs X episodes on a control group: where sensor
-#   frequency is unmodified, and the test group: where the sensor frequency is
-#   modified according to the discrete reactive scheme discussed in the 
-#   proposal.
-# (2) Collect data on those 2*X episodes and perform a comparitive analysis to
-#   determine if the test group improves in (a) avoiding collisions, (b) 
-#   maximizing the reward function, and (c) reducing latency.
+###############################################################################
+# High-level project tasks. 
+# (1) Create an experiment that runs X episodes on a control group: where
+#   sensor frequency is unmodified, and the test group: where the sensor
+#   frequency is modified according to the discrete reactive scheme discussed
+#   in the proposal.
+# (2) Collect data on those 2*X episodes and perform a
+#   comparitive analysis to determine if the test group improves in (a)
+#   avoiding collisions, (b) maximizing the reward function, and (c) reducing
+#   latency (as measured by lidar).
 
 # One major issue is recording latency. Unfortunately, this simulator is not
 # accurate enough to be a predictor of latency. We can compare how fast the
@@ -99,40 +115,95 @@ agent = agent_factory(env, agent_config)
 # lidar samples taken. This way we can compare the number of lidar samples
 # taken and the resulting performance.
 
-# Run a single episode
-#env.start_video_recorder()
+###############################################################################
+# Run a single episode:
+env = gym.make("highway-lidar-v0")
+# env = RecordVideo(env, "videos") 
+
+# Make agent
+agent_config = {
+    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
+    "env_preprocessors": [{"method":"simplify"}],
+    "display_tree": True,
+    "budget": 50,
+    "gamma": 0.7,
+}
+agent = agent_factory(env, agent_config)
+
+# env.start_video_recorder()
+done = False
+obs = env.reset()
 while not done:
     action = agent.act(obs)
     obs, reward, done, info = env.step(action)
     env.render()
 env.close()
-#env.close_video_recorder()
+# env.close_video_recorder()
 
+###############################################################################
+# Make agent for control and test group
+agent_config = {
+    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
+    "env_preprocessors": [{"method":"simplify"}],
+    "display_tree": True,
+    "budget": 50,
+    "gamma": 0.7,
+}
+agent = agent_factory(env, agent_config)
+
+###############################################################################
 # Begin control group simulation here:
-# env = gym.make("highway-lidar-v0")
-# env.configure({
-#             "adaptive_observations": False,
-#             })
-# num_episodes = 100
-# for i in num_episodes:
-#     # Add data collection here
-#     done = False
-#     while not done:
-#         action = agent.act(obs)
-#         obs, reward, done, info = env.step(action)
-#     env.close()
-    
-# Begin test group simulation here:
-# Need to figure out how to implement the discrete reactive sensor sampling
-# scheme with the existing planner.
-# env = gym.make("highway-lidar-v0")
-# for i in num_episodes:
-#     # Add data collection here
-#     done = False
-#     while not done:
-#         action = agent.act(obs)
-#         obs, reward, done, info = env.step(action)
-#     env.close()
+env = gym.make("highway-lidar-v0")
+env.configure({
+            "adaptive_observations": False,
+            })
 
+# Create statistics variables
+control_collisions = 0
+control_rewards = []
+control_lidar_samples = []
+
+num_episodes = 1000
+for _ in num_episodes:
+    # Add data collection here
+    done = False
+    episode_reward = 0
+    obs = env.reset()
+    while not done:
+        action = agent.act(obs)
+        obs, reward, done, info = env.step(action)
+        episode_reward += reward
+    control_collisions += float(env.vehicle.crashed)
+    control_rewards.append(episode_reward)
+    control_lidar_samples.append(env.lidar_count)
+    env.close()
+
+###############################################################################
+# Begin test group simulation here:
+env = gym.make("highway-lidar-v0")
+env.configure({
+            "adaptive_observations": True,
+            })
+
+# Create statistics variables
+test_collisions = 0
+test_rewards = []
+test_lidar_samples = []
+
+for _ in num_episodes:
+    # Add data collection here
+    done = False
+    episode_reward = 0
+    obs = env.reset()
+    while not done:
+        action = agent.act(obs)
+        obs, reward, done, info = env.step(action)
+        episode_reward += reward
+    test_collisions += float(env.vehicle.crashed)
+    test_rewards.append(episode_reward)
+    test_lidar_samples.append(env.lidar_count)
+    env.close()
+
+###############################################################################
 # Begin data analysis here:
 # Maybe a bar chart comparing the three metrics we are looking?
