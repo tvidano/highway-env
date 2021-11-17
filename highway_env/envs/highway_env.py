@@ -174,7 +174,7 @@ class HighwayEnvLidar(HighwayEnvFast):
                                         # full speed, linearly mapped to zero 
                                         # for lower speeds according to 
                                         # config["reward_speed_range"].
-            "smooth_driving_reward": 0.1,   # The reward received when IDLE is
+            "smooth_driving_reward": 1.0,   # The reward received when IDLE is
                                             # chosen and there aren't many lane
                                             # changes.
             "distance_threshold": 15,   # [m] distance at which
@@ -208,11 +208,12 @@ class HighwayEnvLidar(HighwayEnvFast):
             else self.vehicle.lane_index[2]
         scaled_speed = utils.lmap(self.vehicle.speed, \
             self.config["reward_speed_range"], [0, 1])
-        dist_to_obstacle = max(self._find_closest_obstacle(), 0)
+        collision_dist = 5.0
+        dist_to_obstacle = max(self.find_closest_obstacle(), 0) - collision_dist
         distance_reward = 2 * self.config["obstacle_distance_reward"] / np.pi \
             * np.arctan(0.5 * -dist_to_obstacle) \
             + self.config["obstacle_distance_reward"]
-        if action == 1 or action == 4:
+        if action == 1:
             smooth_reward = self.config["smooth_driving_reward"]
         elif action == 0 or action == 2:
             smooth_reward = -self.config["smooth_driving_reward"]
@@ -231,7 +232,7 @@ class HighwayEnvLidar(HighwayEnvFast):
                             [0, 1])
         return reward
     
-    def _find_closest_obstacle(self) -> float:
+    def find_closest_obstacle(self) -> float:
         """
         Uses the ego-vehicle global position and the global position of
         buffered lidar points to find the lidar point directly in front of or 
@@ -239,6 +240,8 @@ class HighwayEnvLidar(HighwayEnvFast):
         """
 
         lane_width = self.road.network.lanes_list()[0].DEFAULT_WIDTH
+        lane_ratio = 0.7
+        lane_buffer = lane_width * lane_ratio
         x_position = self.observation_type.POSITION_X
         y_position = self.observation_type.POSITION_Y
         # 1. get the current ego-vehicle lane
@@ -249,8 +252,8 @@ class HighwayEnvLidar(HighwayEnvFast):
         closest_lidar = np.array([np.inf,np.inf])
         closest_distance = np.linalg.norm(ego_position - closest_lidar)
         for lidar_point in self.lidar_buffer[:,[x_position,y_position]]:
-            if lidar_point[1] - lane_width < ego_position[1] \
-                    < lidar_point[1] + lane_width:
+            if lidar_point[1] - lane_buffer < ego_position[1] \
+                    < lidar_point[1] + lane_buffer:
                 distance = np.linalg.norm(ego_position - lidar_point)
                 if distance < closest_distance:
                     closest_distance = distance
