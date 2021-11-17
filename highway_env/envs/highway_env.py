@@ -208,12 +208,10 @@ class HighwayEnvLidar(HighwayEnvFast):
             else self.vehicle.lane_index[2]
         scaled_speed = utils.lmap(self.vehicle.speed, \
             self.config["reward_speed_range"], [0, 1])
-        dist_slope = abs(self.config["obstacle_distance_reward"]) / \
-            self.config["distance_threshold"]
         dist_to_obstacle = max(self._find_closest_obstacle(), 0)
-        distance_reward = (dist_to_obstacle - 5) * dist_slope \
-            + self.config["obstacle_distance_reward"] if dist_to_obstacle \
-            <= self.config["distance_threshold"] else 0
+        distance_reward = 2 * self.config["obstacle_distance_reward"] / np.pi \
+            * np.arctan(0.5 * -dist_to_obstacle) \
+            + self.config["obstacle_distance_reward"]
         if action == 1 or action == 4:
             smooth_reward = self.config["smooth_driving_reward"]
         elif action == 0 or action == 2:

@@ -161,7 +161,7 @@ agent_config = {
     "env_preprocessors": [{"method":"simplify"}],
     "display_tree": True,
     "budget": 50,
-    "gamma": 0.7,
+    "gamma": 0.9,
 }
 agent = agent_factory(env, agent_config)
 
@@ -201,7 +201,7 @@ agent_config = {
     "env_preprocessors": [{"method":"simplify"}],
     "display_tree": True,
     "budget": 50,
-    "gamma": 0.7,
+    "gamma": 0.9,
 }
 agent = agent_factory(env, agent_config)
 
