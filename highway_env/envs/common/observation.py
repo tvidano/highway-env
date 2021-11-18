@@ -605,6 +605,10 @@ class AdaptiveLidarObservation(LidarObservation):
     Lidar that collects data from all indices at a base frequency, and selected
     indices at a higher frequency when called.
     """
+    DISTANCE = 0
+    POSITION_X = 1
+    POSITION_Y = 2
+    VELOCITY = 3
 
     def __init__(self, env,
                  cells: int = 16,
@@ -612,7 +616,37 @@ class AdaptiveLidarObservation(LidarObservation):
                  normalize: bool = False,
                  **kwargs):
         super().__init__(env, **kwargs)
+        self.normalize = normalize
 
+    def trace(self, origin: np.ndarray, origin_velocity: np.ndarray) -> np.ndarray:
+        self.origin = origin.copy()
+        self.grid = np.hstack([np.ones((self.cells, 3)) * np.inf, \
+                               np.zeros((self.cells,1))])
+
+        for obstacle in self.env.road.vehicles + self.env.road.objects:
+            # Filter out ego-vehicle, and those outside of max range.
+            if obstacle is self.observer_vehicle:
+                continue
+            center_distance = np.linalg.norm(obstacle.position - origin)
+            if center_distance > self.maximum_range:
+                continue
+            # Get the index of the lidar data that corresponds to that obstacle
+            center_angle = self.position_to_angle(obstacle.position, origin)
+            center_index = self.angle_to_index(center_angle)
+            # distance = center_distance - obstacle.WIDTH / 2
+            # Update distance if obstacle is closer than current data.
+            if center_distance <= self.grid[center_index, self.DISTANCE]:
+                # Assume perfect estimation of obstacle position and relative
+                # radial velocity.
+                direction = self.index_to_direction(center_index)
+                velocity = (obstacle.velocity - origin_velocity).dot(direction)
+                self.grid[center_index, :] = [center_distance, \
+                    obstacle.position[0], obstacle.position[1], velocity]
+
+            # Removed a portion of LidarObservation.trace() that I didn't
+            # understand. It might be required, but I could see no use.
+        return self.grid
+        
     def selectively_observe(self, indices: list = None) -> np.ndarray:
         """
         Collect data from select |indices|. If |indices| is undefined, all
@@ -622,9 +656,10 @@ class AdaptiveLidarObservation(LidarObservation):
         :return: the lidar data corresponding to the indices.
         """
         # 1. call self.observe()
-        # 2. get rows of the selected |indices|. 
+        full_observation = self.observe()
+        # 2. get rows of the selected |indices|.
         # 3. return those rows.
-        return NotImplementedError
+        return full_observation[indices,:]
 
 
 def observation_factory(env: 'AbstractEnv', config: dict) -> ObservationType:

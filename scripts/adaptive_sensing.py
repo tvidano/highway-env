@@ -13,13 +13,14 @@ local_highway_env = op.join(op.dirname(op.realpath(__file__)),"..",)
 sys.path.insert(1, local_highway_env)
 import highway_env
 from gym.wrappers import RecordVideo, RecordEpisodeStatistics
+import time
 
 # Agent
 from rl_agents.agents.common.factory import agent_factory
 
 # Debugging Tools (uncomment to not show debugging logs)
 # import logging
-# logging.basicConfig(level=logging.warning)
+# logging.basicConfig(level=logging.DEBUG)
 
 ###############################################################################
 # To get started, comment out everything below this section and play around
@@ -50,7 +51,7 @@ from rl_agents.agents.common.factory import agent_factory
 #                                # speed, linearly mapped to zero for lower
 #                                # speeds according to
 #                                # config["reward_speed_range"].
-#     "collision_reward": -0.1,   # The reward received when colliding with a 
+#     "collision_reward": -0.5,   # The reward received when colliding with a 
 #                                # vehicle.
 #     "lane_change_reward": 0.4,
 #     })
@@ -116,40 +117,38 @@ from rl_agents.agents.common.factory import agent_factory
 # taken and the resulting performance.
 
 ###############################################################################
-# Run a single episode:
-env = gym.make("highway-lidar-v0")
-# env = RecordVideo(env, "videos") 
+# # Run a single episode:
+# env = gym.make("highway-lidar-v0")
+# # env = RecordVideo(env, "videos") 
+# env.configure({
+#             "adaptive_observations": False,
+#             })
 
-# Make agent
-agent_config = {
-    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
-    "env_preprocessors": [{"method":"simplify"}],
-    "display_tree": True,
-    "budget": 50,
-    "gamma": 0.7,
-}
-agent = agent_factory(env, agent_config)
+# # Make agent
+# agent_config = {
+#     "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
+#     "env_preprocessors": [{"method":"simplify"}],
+#     "display_tree": True,
+#     "budget": 50,
+#     "gamma": 0.9,
+# }
+# agent = agent_factory(env, agent_config)
 
-# env.start_video_recorder()
-done = False
-obs = env.reset()
-while not done:
-    action = agent.act(obs)
-    obs, reward, done, info = env.step(action)
-    env.render()
-env.close()
-# env.close_video_recorder()
-
-###############################################################################
-# Make agent for control and test group
-agent_config = {
-    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
-    "env_preprocessors": [{"method":"simplify"}],
-    "display_tree": True,
-    "budget": 50,
-    "gamma": 0.7,
-}
-agent = agent_factory(env, agent_config)
+# # env.start_video_recorder()
+# action_dict = env.action_type.ACTIONS_ALL
+# done = False
+# obs = env.reset()
+# while not done:
+#     action = agent.act(obs)
+#     obs, reward, done, info = env.step(action)
+#     #print(f"last Observation: {obs}")
+#     closest_car = env.find_closest_obstacle()
+#     print(f"Closest {closest_car:.2f} m away.")
+#     print(f"action {action_dict[action]}")
+#     print(f"reward {reward:.2f}")
+#     env.render()
+# env.close()
+# # env.close_video_recorder()
 
 ###############################################################################
 # Begin control group simulation here:
@@ -158,13 +157,24 @@ env.configure({
             "adaptive_observations": False,
             })
 
+# Make agent for control group
+agent_config = {
+    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
+    "env_preprocessors": [{"method":"simplify"}],
+    "display_tree": True,
+    "budget": 50,
+    "gamma": 0.9,
+}
+agent = agent_factory(env, agent_config)
+
 # Create statistics variables
 control_collisions = 0
 control_rewards = []
 control_lidar_samples = []
 
-num_episodes = 1000
-for _ in num_episodes:
+num_episodes = 100
+control_start_time = time.time()
+for i in range(num_episodes):
     # Add data collection here
     done = False
     episode_reward = 0
@@ -177,6 +187,8 @@ for _ in num_episodes:
     control_rewards.append(episode_reward)
     control_lidar_samples.append(env.lidar_count)
     env.close()
+    print(f"Completed control episode {i}")
+control_end_time = time.time()
 
 ###############################################################################
 # Begin test group simulation here:
@@ -185,12 +197,23 @@ env.configure({
             "adaptive_observations": True,
             })
 
+# Make agent for control group
+agent_config = {
+    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
+    "env_preprocessors": [{"method":"simplify"}],
+    "display_tree": True,
+    "budget": 50,
+    "gamma": 0.9,
+}
+agent = agent_factory(env, agent_config)
+
 # Create statistics variables
 test_collisions = 0
 test_rewards = []
 test_lidar_samples = []
 
-for _ in num_episodes:
+test_start_time = time.time()
+for i in range(num_episodes):
     # Add data collection here
     done = False
     episode_reward = 0
@@ -203,7 +226,22 @@ for _ in num_episodes:
     test_rewards.append(episode_reward)
     test_lidar_samples.append(env.lidar_count)
     env.close()
+    print(f"Completed test episode {i}")
+test_end_time = time.time()
 
 ###############################################################################
 # Begin data analysis here:
 # Maybe a bar chart comparing the three metrics we are looking?
+print(f"control collision: {control_collisions}")
+print(f"control rewards: {control_rewards}")
+print(f"control lidar samples: {control_lidar_samples}")
+print(f"test collision: {test_collisions}")
+print(f"test rewards: {test_rewards}")
+print(f"test lidar samples: {test_lidar_samples}")
+
+print(f"ave. control rew: {sum(control_rewards)/len(control_rewards)}")
+print(f"ave. test rew: {sum(test_rewards)/len(test_rewards)}")
+print(f"ave. control lidar samples: {sum(control_lidar_samples)/len(control_lidar_samples)}")
+print(f"ave. test lidar samples: {sum(test_lidar_samples)/len(test_lidar_samples)}")
+print(f"control runtime: {control_end_time - control_start_time}")
+print(f"test runtime: {test_end_time - test_start_time}")
