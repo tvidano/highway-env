@@ -318,6 +318,12 @@ class HighwayEnvLidar(HighwayEnvFast):
             self.road.step(1 / self.config["simulation_frequency"])
             self.time += 1 # [in simulation steps, not action steps]
 
+            # the fastest observation frequency is the policy frequency
+            if self.config["adaptive_observations"]:
+                self._adaptively_observe()
+            else:
+                self._observe()
+
             # Automatically render intermediate simulation steps if a viewer 
             # has been launched. Ignored if the rendering is done offscreen
             if frame < frames - 1:  # Last frame will be rendered through 

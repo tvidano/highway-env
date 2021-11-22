@@ -47,7 +47,7 @@ from rl_agents.agents.common.factory import agent_factory
 #     "policy_frequency": f_policy,  # [Hz]
 #     "duration": t_duration,  # [steps per episode]
 #     "vehicles_density": 1.5,
-#     "show_trajectories": False,            
+#     "show_trajectories": False,
 #     # "right_lane_reward": 0.0,  # The reward received when driving on the right-
 #     #                            # most lanes, linearly mapped to zero for other
 #     #                            # lanes.            
