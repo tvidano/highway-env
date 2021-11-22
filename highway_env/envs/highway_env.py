@@ -182,6 +182,8 @@ class HighwayEnvLidar(HighwayEnvFast):
                                         # non-zero (3 car lengths).
             "adaptive_observations": True,
             "base_lidar_frequency": 0.5,  # [Hz], <= policy_frequency
+            "constant_base_lidar": False, # uses base lidar frequency without 
+                                        # adaptive sampling.
             "reaction_distance": 15,    # [m] distance at which higher sampling
                                         # rates are used for lidar indices.
             "reaction_velocity": 7.5,   # [m/s] velocity at which higher 
@@ -278,6 +280,22 @@ class HighwayEnvLidar(HighwayEnvFast):
         self.steps += 1
         self._simulate(action)
 
+        if self.config["adaptive_observations"] and \
+                not self.config["constant_base_lidar"] and \
+                self.time % int(self.config["simulation_frequency"] \
+                // self.config["base_lidar_frequency"]) == 0:
+            self._observe()
+        # the fastest observation frequency is the policy frequency
+        elif self.config["adaptive_observations"] and \
+                not self.config["constant_base_lidar"]:
+            self._adaptively_observe()
+        elif self.config["constant_base_lidar"] and \
+                self.time % int(self.config["simulation_frequency"] \
+                // self.config["base_lidar_frequency"]) == 0:
+            self._observe()
+        elif not self.config["constant_base_lidar"]:
+            self._observe()
+
         obs = self.lidar_buffer
         reward = self._reward(action)
         terminal = self._is_terminal()
@@ -299,11 +317,6 @@ class HighwayEnvLidar(HighwayEnvFast):
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
             self.time += 1 # [in simulation steps, not action steps]
-            
-            if self.config["adaptive_observations"] and \
-                    self.time % int(self.config["simulation_frequency"] \
-                    // self.config["base_lidar_frequency"]) == 0:
-                self._observe()
 
             # the fastest observation frequency is the policy frequency
             if self.config["adaptive_observations"]:
