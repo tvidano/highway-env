@@ -160,7 +160,7 @@ from rl_agents.agents.common.factory import agent_factory
 
 ###############################################################################
 # Create experiment log file:
-log_dir = op.join(local_highway_env, "scripts","experiment_2")
+log_dir = op.join(local_highway_env, "scripts","experiment_4")
 os.makedirs(log_dir, exist_ok=True)
 log_file = op.join(log_dir, "experiment.log")
 raw_control_data = op.join(log_dir, "control_raw.log")
@@ -169,8 +169,8 @@ agent_budget = 50
 agent_gamma = 0.9
 f_sim = 5
 f_policy = 1
-f_lidar = 0.5
-num_episodes = 250
+f_lidar = 0.25
+num_episodes = 500
 
 # Begin control group 1 simulation here:
 env = gym.make("highway-lidar-v0")
@@ -254,6 +254,16 @@ with open(log_file, 'a') as f:
     print(f"Agent Gamma: {agent_gamma}", file=f)
     print(f"Sensing Policy: Constant at {f_lidar} Hz", file=f)
     print("*" * 79, file=f)
+
+# Make agent for control groups
+agent_config = {
+    "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
+    "env_preprocessors": [{"method":"simplify"}],
+    "display_tree": False,
+    "budget": agent_budget,
+    "gamma": agent_gamma,
+}
+agent = agent_factory(env, agent_config)
 
 # Create statistics variables
 control2_collisions = []
@@ -342,43 +352,6 @@ test_end_time = time.time()
 ###############################################################################
 # Begin data analysis here:
 # Maybe a bar chart comparing the three metrics we are looking?
-with open(log_file, 'a') as f:
-    print("*" * 79, file=f)
-    print("Experiment Summary")
-    print("*" * 79, file=f)
-    print("*" * 79, file=f)
-    print("Raw Data:", file=f)
-    print(f"control 1 collision: {control_collisions}", file=f)
-    print(f"control 1 rewards: {control_rewards}", file=f)
-    print(f"control 1 lidar samples: {control_lidar_samples}", file=f)
-    print(f"control 2 collision: {control2_collisions}", file=f)
-    print(f"control 2 rewards: {control2_rewards}", file=f)
-    print(f"control 2 lidar samples: {control2_lidar_samples}", file=f)
-    print(f"test collision: {test_collisions}", file=f)
-    print(f"test rewards: {test_rewards}", file=f)
-    print(f"test lidar samples: {test_lidar_samples}", file=f)
-
-    print("*" * 79, file=f)
-    print("Aggregated Data:")
-    print(f"total control 1 collisions: {sum(control_collisions)}", file=f)
-    print(f"ave. control 1 rew: {sum(control_rewards)/len(control_rewards)}", file=f)
-    print(f"ave. control 1 lidar samples: {sum(control_lidar_samples)/len(control_lidar_samples)}", file=f)
-    print(f"total control 2 collisions: {sum(control2_collisions)}", file=f)
-    print(f"ave. control 2 rew: {sum(control2_rewards)/len(control2_rewards)}", file=f)
-    print(f"ave. control 2 lidar samples: {sum(control2_lidar_samples)/len(control2_lidar_samples)}", file=f)
-    print(f"total test collisions: {sum(test_collisions)}", file=f)
-    print(f"ave. test rew: {sum(test_rewards)/len(test_rewards)}", file=f)
-    print(f"ave. test lidar samples: {sum(test_lidar_samples)/len(test_lidar_samples)}", file=f)
-    
-    print("*" * 79, file=f)
-    print("Runtime Data:")
-    print(f"control 1 runtime: {control_end_time - control_start_time}", file=f)
-    print(f"control 2 runtime: {control2_end_time - control2_start_time}", file=f)
-    print(f"test runtime: {test_end_time - test_start_time}", file=f)
-    print(f"control 1 simulated time: {sum(control_times)}", file=f)
-    print(f"control 2 simulated time: {sum(control2_times)}", file=f)
-    print(f"test simulated time: {sum(test_times)}", file=f)
-
 labels = ["High Freq. Sensing","Adaptive Sensing","Low Freq. Sensing"]
 x = np.arange(len(labels))
 control_lidar_per_sec = np.array(control_lidar_samples) / np.array(control_times)
@@ -408,5 +381,46 @@ ax2.set_ylabel('Average Collisions per Episode')
 ax2.set_xticks(x)
 ax2.set_xticklabels(labels)
 ax2.yaxis.grid(True)
+plt.ylim([0,1])
 fig2.savefig(op.join(log_dir, "collisions.png"))
 fig2.show()
+
+with open(log_file, 'a') as f:
+    print("*" * 79, file=f)
+    print("Experiment Summary", file=f)
+    print("*" * 79, file=f)
+    print("*" * 79, file=f)
+    print("Raw Data:", file=f)
+    print(f"control 1 collision: {control_collisions}", file=f)
+    print(f"control 1 rewards: {control_rewards}", file=f)
+    print(f"control 1 lidar samples: {control_lidar_samples}", file=f)
+    print(f"control 2 collision: {control2_collisions}", file=f)
+    print(f"control 2 rewards: {control2_rewards}", file=f)
+    print(f"control 2 lidar samples: {control2_lidar_samples}", file=f)
+    print(f"test collision: {test_collisions}", file=f)
+    print(f"test rewards: {test_rewards}", file=f)
+    print(f"test lidar samples: {test_lidar_samples}", file=f)
+
+    print("*" * 79, file=f)
+    print("Aggregated Data:", file=f)
+    print(f"total control 1 collisions: {sum(control_collisions)}", file=f)
+    print(f"ave. control 1 rew: {sum(control_rewards)/len(control_rewards)}", file=f)
+    print(f"ave. control 1 lidar samples per sec: {np.mean(control_lidar_per_sec)}", file=f)
+    print(f"std control 1 lidar_samples per sec: {np.std(control_lidar_per_sec)}", file=f)
+    print(f"total control 2 collisions: {sum(control2_collisions)}", file=f)
+    print(f"ave. control 2 rew: {sum(control2_rewards)/len(control2_rewards)}", file=f)
+    print(f"ave. control 2 lidar samples per sec:  {np.mean(control2_lidar_per_sec)}", file=f)
+    print(f"std control 2 lidar samples per sec: {np.std(control2_lidar_per_sec)}", file=f)
+    print(f"total test collisions: {sum(test_collisions)}", file=f)
+    print(f"ave. test rew: {sum(test_rewards)/len(test_rewards)}", file=f)
+    print(f"ave. test lidar samples per sec: {np.mean(test_lidar_per_sec)}", file=f)
+    print(f"std test lidar samples per sec: {np.std(test_lidar_per_sec)}", file=f)
+    
+    print("*" * 79, file=f)
+    print("Runtime Data:", file=f)
+    print(f"control 1 runtime: {control_end_time - control_start_time}", file=f)
+    print(f"control 2 runtime: {control2_end_time - control2_start_time}", file=f)
+    print(f"test runtime: {test_end_time - test_start_time}", file=f)
+    print(f"control 1 simulated time: {sum(control_times)}", file=f)
+    print(f"control 2 simulated time: {sum(control2_times)}", file=f)
+    print(f"test simulated time: {sum(test_times)}", file=f)
