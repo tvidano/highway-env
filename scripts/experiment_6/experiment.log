@@ -1,0 +1,13 @@
+*******************************************************************************
+Experimental Setup
+Simulation Frequency: 20
+Policy Frequency: 4
+Lidar Frequency: 2
+*******************************************************************************
+*******************************************************************************
+Control Group 1
+Agent Budget: 50
+Agent Gamma: 0.9
+Sensing Policy: Constant at 4 Hz
+*******************************************************************************
+Episode # | Total Rew. | If Crashed | Lidar Samples

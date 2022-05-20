@@ -1,0 +1,42 @@
+Ideas for ADAS Reinforcement Learning Environments using Highway_env in OpenAI Gym:
+
+What I want:
+An environment that will allow the RL algorithm to learn when and how to intervene for the driver
+to mitigate or avoid collisions.
+
+Environment Description:
+- The subject vehicle passes control to the RL algorithm when it has determined that the driver
+is not reacting appropriately to either avoid the collision or optimally mitigate that collision.
+- Once the RL algorithm takes command it can brake, throttle, and steer with continuous actions.
+- The scenario should occur on an environment similar to highway_env-v0 since it already exists.
+- In the future low speed environments and perhaps a generic environment that randomly selects
+potential collision scenarios can be developed.
+- The environment should have different road conditions and other vehicles on the road with the 
+subject vehicle.
+- The highest reward should be avoiding all collisions, then there should be a scaled reward inversely
+proportional to the amount of damage sustained in a collision. The metric for the amount of damage 
+sustained should be rudimentary for now, but I can imagine encoding research-based metrics. For instance,
+perhaps the vehicle cannot avoid a full rear-end collision, but it can steer just enough to nick the corner
+instead of hitting head on. Perhaps this is considered better and should be rewarded as such. 
+
+Solution Idea 1:
+- Create a new environment based on highway_env-v0. A new environment would allow more flexibility.
+- Use a high density and three lanes, so that there is a chance that the subject vehicle starts in the middle lane
+and can steer to either side to avoid a collision.
+- Make one of the cars in front of the subject vehicle abruptly brake to induce a potential collision.
+- Make the RL algorithm idle until specific conditions indicating a potential collision occur. These conditions
+can be vehicle distances, differences in accelerations, etc. There are numerous methods in literature.
+  - Once the RL algorithm is allowed non-idle actions it should be allowed all options (throttle, brake, steering)
+- The rewards should be restructured:
+  - The highest reward is given if no collisions occur at all
+  - A linear scale is applied to collisions based on relative velocities at the time of collision (a measure of damage?)
+  - Penalties occur if more than 1 collisions occur (might cause issues because there might be a pileup that the subject
+vehicle cannot do anything about)
+    - might be able to specify the number of collisions that specifically occur with the subject vehicle, this way
+any other collisions do not impact the reward. 
+- A simple tire model should be implemented with reasonable parameters. (should search for python implementations)
+- The bicycle kinematic model should at least include tire forces and saturation capabilities. 
+  - For future development more complex models should be used (probably already exist in python packages):
+    - the first should be algebraic relationship to model weight transfer when braking and throttling
+    - the second should be a two-track model
+    - the third should be a 14-DOF model
