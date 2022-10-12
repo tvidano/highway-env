@@ -41,6 +41,7 @@ class EnvViewer(object):
         if os.environ.get("SDL_VIDEODRIVER", None) == "dummy":
             self.enabled = False
 
+        self.observer_vehicle = None
         self.agent_display = None
         self.agent_surface = None
         self.vehicle_trajectory = None
@@ -147,7 +148,9 @@ class EnvViewer(object):
 
     def window_position(self) -> np.ndarray:
         """the world position of the center of the displayed window."""
-        if self.env.vehicle:
+        if self.observer_vehicle:
+            return self.observer_vehicle.position
+        elif self.env.vehicle:
             return self.env.vehicle.position
         else:
             return np.array([0, 0])
@@ -168,7 +171,7 @@ class EventHandler(object):
         """
         if isinstance(action_type, DiscreteMetaAction):
             cls.handle_discrete_action_event(action_type, event)
-        elif isinstance(action_type, ContinuousAction):
+        elif action_type.__class__ == ContinuousAction:
             cls.handle_continuous_action_event(action_type, event)
 
     @classmethod

@@ -1,10 +1,11 @@
 from abc import ABCMeta, abstractmethod
-from typing import Tuple, List, Optional
+from copy import deepcopy
+from typing import Tuple, List, Optional, Union
 import numpy as np
 
 from highway_env import utils
-from highway_env.types import Vector
-from highway_env.utils import wrap_to_pi
+from highway_env.road.spline import LinearSpline2D
+from highway_env.utils import wrap_to_pi, Vector, get_class_path, class_from_path
 
 
 class AbstractLane(object):
@@ -58,6 +59,24 @@ class AbstractLane(object):
         """
         raise NotImplementedError()
 
+    @classmethod
+    def from_config(cls, config: dict):
+        """
+        Create lane instance from config
+
+        :param config: json dict with lane parameters
+        """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def to_config(self) -> dict:
+        """
+        Write lane parameters to dict which can be serialized to json
+
+        :return: dict of lane parameters
+        """
+        raise NotImplementedError()
+
     def on_lane(self, position: np.ndarray, longitudinal: float = None, lateral: float = None, margin: float = 0) \
             -> bool:
         """
@@ -104,8 +123,12 @@ class AbstractLane(object):
         if heading is None:
             return self.distance(position)
         s, r = self.local_coordinates(position)
-        angle = np.abs(wrap_to_pi(heading - self.heading_at(s)))
+        angle = np.abs(self.local_angle(heading, s))
         return abs(r) + max(s - self.length, 0) + max(0 - s, 0) + heading_weight*angle
+
+    def local_angle(self, heading: float, long_offset: float):
+        """Compute non-normalised angle of heading to the lane."""
+        return wrap_to_pi(heading - self.heading_at(long_offset))
 
 
 class LineType:
@@ -167,6 +190,26 @@ class StraightLane(AbstractLane):
         lateral = np.dot(delta, self.direction_lateral)
         return float(longitudinal), float(lateral)
 
+    @classmethod
+    def from_config(cls, config: dict):
+        config["start"] = np.array(config["start"])
+        config["end"] = np.array(config["end"])
+        return cls(**config)
+
+    def to_config(self) -> dict:
+        return {
+            "class_path": get_class_path(self.__class__),
+            "config": {
+                "start": _to_serializable(self.start),
+                "end": _to_serializable(self.end),
+                "width": self.width,
+                "line_types": self.line_types,
+                "forbidden": self.forbidden,
+                "speed_limit": self.speed_limit,
+                "priority": self.priority
+            }
+        }
+
 
 class SineLane(StraightLane):
 
@@ -209,6 +252,24 @@ class SineLane(StraightLane):
         longitudinal, lateral = super().local_coordinates(position)
         return longitudinal, lateral - self.amplitude * np.sin(self.pulsation * longitudinal + self.phase)
 
+    @classmethod
+    def from_config(cls, config: dict):
+        config["start"] = np.array(config["start"])
+        config["end"] = np.array(config["end"])
+        return cls(**config)
+
+    def to_config(self) -> dict:
+        config = super().to_config()
+        config.update({
+            "class_path": get_class_path(self.__class__),
+        })
+        config["config"].update({
+            "amplitude": self.amplitude,
+            "pulsation": self.pulsation,
+            "phase": self.phase
+        })
+        return config
+
 
 class CircularLane(AbstractLane):
 
@@ -230,6 +291,7 @@ class CircularLane(AbstractLane):
         self.radius = radius
         self.start_phase = start_phase
         self.end_phase = end_phase
+        self.clockwise = clockwise
         self.direction = 1 if clockwise else -1
         self.width = width
         self.line_types = line_types or [LineType.STRIPED, LineType.STRIPED]
@@ -258,3 +320,180 @@ class CircularLane(AbstractLane):
         longitudinal = self.direction*(phi - self.start_phase)*self.radius
         lateral = self.direction*(self.radius - r)
         return longitudinal, lateral
+
+    @classmethod
+    def from_config(cls, config: dict):
+        config["center"] = np.array(config["center"])
+        return cls(**config)
+
+    def to_config(self) -> dict:
+        return {
+            "class_path": get_class_path(self.__class__),
+            "config": {
+                "center": _to_serializable(self.center),
+                "radius": self.radius,
+                "start_phase": self.start_phase,
+                "end_phase": self.end_phase,
+                "clockwise": self.clockwise,
+                "width": self.width,
+                "line_types": self.line_types,
+                "forbidden": self.forbidden,
+                "speed_limit": self.speed_limit,
+                "priority": self.priority
+            }
+        }
+
+
+class PolyLaneFixedWidth(AbstractLane):
+    """
+    A fixed-width lane defined by a set of points and approximated with a 2D Hermite polynomial.
+    """
+
+    def __init__(
+        self,
+        lane_points: List[Tuple[float, float]],
+        width: float = AbstractLane.DEFAULT_WIDTH,
+        line_types: Tuple[LineType, LineType] = None,
+        forbidden: bool = False,
+        speed_limit: float = 20,
+        priority: int = 0,
+    ) -> None:
+        self.curve = LinearSpline2D(lane_points)
+        self.length = self.curve.length
+        self.width = width
+        self.line_types = line_types
+        self.forbidden = forbidden
+        self.speed_limit = speed_limit
+        self.priority = priority
+
+    def position(self, longitudinal: float, lateral: float) -> np.ndarray:
+        x, y = self.curve(longitudinal)
+        yaw = self.heading_at(longitudinal)
+        return np.array([x - np.sin(yaw) * lateral, y + np.cos(yaw) * lateral])
+
+    def local_coordinates(self, position: np.ndarray) -> Tuple[float, float]:
+        lon, lat = self.curve.cartesian_to_frenet(position)
+        return lon, lat
+
+    def heading_at(self, longitudinal: float) -> float:
+        dx, dy = self.curve.get_dx_dy(longitudinal)
+        return np.arctan2(dy, dx)
+
+    def width_at(self, longitudinal: float) -> float:
+        return self.width
+
+    @classmethod
+    def from_config(cls, config: dict):
+        return cls(**config)
+
+    def to_config(self) -> dict:
+        return {
+            "class_name": self.__class__.__name__,
+            "config": {
+                "lane_points": _to_serializable(
+                    [_to_serializable(p.position) for p in self.curve.poses]
+                ),
+                "width": self.width,
+                "line_types": self.line_types,
+                "forbidden": self.forbidden,
+                "speed_limit": self.speed_limit,
+                "priority": self.priority,
+            },
+        }
+
+
+class PolyLane(PolyLaneFixedWidth):
+    """
+    A lane defined by a set of points and approximated with a 2D Hermite polynomial.
+    """
+
+    def __init__(
+        self,
+        lane_points: List[Tuple[float, float]],
+        left_boundary_points: List[Tuple[float, float]],
+        right_boundary_points: List[Tuple[float, float]],
+        line_types: Tuple[LineType, LineType] = None,
+        forbidden: bool = False,
+        speed_limit: float = 20,
+        priority: int = 0,
+    ):
+        super().__init__(
+            lane_points=lane_points,
+            line_types=line_types,
+            forbidden=forbidden,
+            speed_limit=speed_limit,
+            priority=priority,
+        )
+        self.right_boundary = LinearSpline2D(right_boundary_points)
+        self.left_boundary = LinearSpline2D(left_boundary_points)
+        self._init_width()
+
+    def width_at(self, longitudinal: float) -> float:
+        if longitudinal < 0:
+            return self.width_samples[0]
+        elif longitudinal > len(self.width_samples) - 1:
+            return self.width_samples[-1]
+        else:
+            return self.width_samples[int(longitudinal)]
+
+    def _width_at_s(self, longitudinal: float) -> float:
+        """
+        Calculate width by taking the minimum distance between centerline and each boundary at a given s-value. This compensates indentations in boundary lines.
+        """
+        center_x, center_y = self.position(longitudinal, 0)
+        right_x, right_y = self.right_boundary(
+            self.right_boundary.cartesian_to_frenet([center_x, center_y])[0]
+        )
+        left_x, left_y = self.left_boundary(
+            self.left_boundary.cartesian_to_frenet([center_x, center_y])[0]
+        )
+
+        dist_to_center_right = np.linalg.norm(
+            np.array([right_x, right_y]) - np.array([center_x, center_y])
+        )
+        dist_to_center_left = np.linalg.norm(
+            np.array([left_x, left_y]) - np.array([center_x, center_y])
+        )
+
+        return max(
+            min(dist_to_center_right, dist_to_center_left) * 2,
+            AbstractLane.DEFAULT_WIDTH,
+        )
+
+    def _init_width(self):
+        """
+        Pre-calculate sampled width values in about 1m distance to reduce computation during runtime. It is assumed that the width does not change significantly within 1-2m.
+        Using numpys linspace ensures that min and max s-values are contained in the samples.
+        """
+        s_samples = np.linspace(
+            0,
+            self.curve.length,
+            num=int(np.ceil(self.curve.length)) + 1,
+        )
+        self.width_samples = [self._width_at_s(s) for s in s_samples]
+
+    def to_config(self) -> dict:
+        config = super().to_config()
+
+        ordered_boundary_points = _to_serializable(
+            [_to_serializable(p.position) for p in reversed(self.left_boundary.poses)]
+        )
+        ordered_boundary_points += _to_serializable(
+            [_to_serializable(p.position) for p in self.right_boundary.poses]
+        )
+
+        config["class_name"] = self.__class__.__name__
+        config["config"]["ordered_boundary_points"] = ordered_boundary_points
+        del config["config"]["width"]
+
+        return config
+
+
+def _to_serializable(arg: Union[np.ndarray, List]) -> List:
+    if isinstance(arg, np.ndarray):
+        return arg.tolist()
+    return arg
+
+
+def lane_from_config(cfg: dict) -> AbstractLane:
+    return class_from_path(cfg["class_path"])(**cfg["config"])

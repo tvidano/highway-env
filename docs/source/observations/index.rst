@@ -91,6 +91,24 @@ vehicle V    0.172      0.065      0.15         0.025
     filled with zeros. The ``presence`` feature can be used to detect such cases, since it is set to 1 for any observed
     vehicle and 0 for placeholders.
 
+===================  ===========================
+Feature                 Description
+===================  ===========================
+:math:`presence`     Disambiguate agents at 0 offset from non-existent agents.
+:math:`x`            World offset of ego vehicle or offset to ego vehicle on the x axis.
+:math:`y`            World offset of ego vehicle or offset to ego vehicle on the y axis.
+:math:`vx`           Velocity on the x axis of vehicle.
+:math:`vy`           Velocity on the y axis of vehicle.
+:math:`heading`      Heading of vehicle in radians.
+:math:`cos_h`        Trigonometric heading of vehicle.
+:math:`sin_h`        Trigonometric heading of vehicle.
+:math:`cos_d`        Trigonometric direction to the vehicle's destination.
+:math:`sin_d`        Trigonometric direction to the vehicle's destination.
+:math:`long_{off}`   Longitudinal offset to closest lane.
+:math:`lat_{off}`    Lateral offset to closest lane.
+:math:`ang_{off}`    Angular offset to closest lane.
+===================  ===========================
+
 Example configuration
 ~~~~~~~~~~~~~~~~~~~~~~
 
@@ -116,7 +134,7 @@ Example configuration
     }
     env = gym.make('highway-v0')
     env.configure(config)
-    obs = env.reset()
+    obs, info = env.reset()
     print(obs)
 
 
@@ -146,9 +164,9 @@ Example configuration
         "policy_frequency": 2
     }
     env.configure(config)
-    obs = env.reset()
+    obs, info = env.reset()
 
-    _, axes = plt.subplots(ncols=4, figsize=(12, 5))
+    fig, axes = plt.subplots(ncols=4, figsize=(12, 5))
     for i, ax in enumerate(axes.flat):
         ax.imshow(obs[i, ...].T, cmap=plt.get_cmap('gray'))
     plt.show()
@@ -161,9 +179,9 @@ We illustrate the stack update by performing three steps in the environment.
 .. jupyter-execute::
 
     for _ in range(3):
-        obs, _, _, _ = env.step(env.action_type.actions_indexes["IDLE"])
+        obs, reward, done, truncated, info = env.step(env.action_type.actions_indexes["IDLE"])
 
-        _, axes = plt.subplots(ncols=4, figsize=(12, 5))
+        fig, axes = plt.subplots(ncols=4, figsize=(12, 5))
         for i, ax in enumerate(axes.flat):
             ax.imshow(obs[i, ...].T, cmap=plt.get_cmap('gray'))
     plt.show()

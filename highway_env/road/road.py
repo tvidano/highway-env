@@ -2,7 +2,7 @@ import numpy as np
 import logging
 from typing import List, Tuple, Dict, TYPE_CHECKING, Optional
 
-from highway_env.road.lane import LineType, StraightLane, AbstractLane
+from highway_env.road.lane import LineType, StraightLane, AbstractLane, lane_from_config
 from highway_env.vehicle.objects import Landmark
 
 if TYPE_CHECKING:
@@ -248,6 +248,37 @@ class RoadNetwork(object):
             route = route[1:]
         return self.get_lane(route[0]).position(longitudinal, lateral), self.get_lane(route[0]).heading_at(longitudinal)
 
+    def random_lane_index(self, np_random: np.random.RandomState) -> LaneIndex:
+        _from = np_random.choice(list(self.graph.keys()))
+        _to = np_random.choice(list(self.graph[_from].keys()))
+        _id = np_random.randint(len(self.graph[_from][_to]))
+        return _from, _to, _id
+
+    @classmethod
+    def from_config(cls, config: dict) -> None:
+        net = cls()
+        for _from, to_dict in config.items():
+            net.graph[_from] = {}
+            for _to, lanes_dict in to_dict.items():
+                net.graph[_from][_to] = []
+                for lane_dict in lanes_dict:
+                    net.graph[_from][_to].append(
+                        lane_from_config(lane_dict)
+                    )
+        return net
+
+    def to_config(self) -> dict:
+        graph_dict = {}
+        for _from, to_dict in self.graph.items():
+            graph_dict[_from] = {}
+            for _to, lanes in to_dict.items():
+                graph_dict[_from][_to] = []
+                for lane in lanes:
+                    graph_dict[_from][_to].append(
+                        lane.to_config()
+                    )
+        return graph_dict
+
 
 class Road(object):
 
@@ -302,9 +333,9 @@ class Road(object):
             vehicle.step(dt)
         for i, vehicle in enumerate(self.vehicles):
             for other in self.vehicles[i+1:]:
-                vehicle.check_collision(other, dt)
+                vehicle.handle_collisions(other, dt)
             for other in self.objects:
-                vehicle.check_collision(other, dt)
+                vehicle.handle_collisions(other, dt)
 
     def neighbour_vehicles(self, vehicle: 'kinematics.Vehicle', lane_index: LaneIndex = None) \
             -> Tuple[Optional['kinematics.Vehicle'], Optional['kinematics.Vehicle']]:

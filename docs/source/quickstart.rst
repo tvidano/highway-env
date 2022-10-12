@@ -20,7 +20,7 @@ Here is a quick example of how to create an environment:
   env.reset()
   for _ in range(3):
       action = env.action_type.actions_indexes["IDLE"]
-      obs, reward, done, info = env.step(action)
+      obs, reward, done, truncated, info = env.step(action)
       env.render()
 
   plt.imshow(env.render(mode="rgb_array"))
@@ -38,6 +38,7 @@ Here is the list of all the environments available and their descriptions:
   environments/roundabout
   environments/parking
   environments/intersection
+  environments/racetrack
 
 .. _configuration:
 
@@ -75,86 +76,88 @@ For example, the number of lanes can be changed with:
 Training an agent
 -------------------
 
-Reinforcement Learning agents can be trained using libraries such as `rl-agents <https://github.com/eleurent/rl-agents>`_,
-`baselines <https://github.com/openai/baselines>`_ or `stable-baselines <https://github.com/hill-a/stable-baselines>`_.
+Reinforcement Learning agents can be trained using libraries such as `eleurent/rl-agents <https://github.com/eleurent/rl-agents>`_,
+`openai/baselines <https://github.com/openai/baselines>`_ or `Stable Baselines3 <https://github.com/DLR-RM/stable-baselines3>`_.
 
+Here is an example of SB3's DQN implementation trained on ``highway-fast-v0`` with its default kinematics observation and an MLP model.
 
-.. figure:: https://raw.githubusercontent.com/eleurent/highway-env/gh-media/docs/media/parking-env.gif
+.. |highway_dqn|  image:: https://colab.research.google.com/assets/colab-badge.svg
+   :target: https://colab.research.google.com/github/eleurent/highway-env/blob/master/scripts/sb3_highway_dqn.ipynb
 
-   The highway-parking-v0 environment trained with HER.
+|highway_dqn|
 
 .. code-block:: python
 
   import gym
   import highway_env
-  import numpy as np
+  from stable_baselines3 import DQN
 
-  from stable_baselines import HER, SAC, DDPG, TD3
-  from stable_baselines.ddpg import NormalActionNoise
+  env = gym.make("highway-fast-v0")
+  model = DQN('MlpPolicy', env,
+                policy_kwargs=dict(net_arch=[256, 256]),
+                learning_rate=5e-4,
+                buffer_size=15000,
+                learning_starts=200,
+                batch_size=32,
+                gamma=0.8,
+                train_freq=1,
+                gradient_steps=1,
+                target_update_interval=50,
+                verbose=1,
+                tensorboard_log="highway_dqn/")
+  model.learn(int(2e4))
+  model.save("highway_dqn/model")
 
-  env = gym.make("parking-v0")
+  # Load and test saved model
+  model = DQN.load("highway_dqn/model")
+  while True:
+    done = truncated = False
+    obs, info = env.reset()
+    while not (done or truncated):
+      action, _states = model.predict(obs, deterministic=True)
+      obs, reward, done, truncated, info = env.step(action)
+      env.render()
 
-  # Create 4 artificial transitions per real transition
-  n_sampled_goal = 4
+A full run takes about 25mn on my laptop (fps=14). The following results are obtained:
 
-  # SAC hyperparams:
-  model = HER('MlpPolicy', env, SAC, n_sampled_goal=n_sampled_goal,
-              goal_selection_strategy='future',
-              verbose=1, buffer_size=int(1e6),
-              learning_rate=1e-3,
-              gamma=0.95, batch_size=256,
-              policy_kwargs=dict(layers=[256, 256, 256]))
+.. figure:: https://raw.githubusercontent.com/eleurent/highway-env/gh-media/docs/media/highway_fast_dqn.png
 
-  model.learn(int(2e5))
-  model.save('her_sac_highway')
+   Training curves, for 5 random seeds.
 
-  # Load saved model
-  model = HER.load('her_sac_highway', env=env)
+.. figure:: https://raw.githubusercontent.com/eleurent/highway-env/gh-media/docs/media/highway_fast_dqn.gif
 
-  obs = env.reset()
+   Video of an episode run with the trained policy.
 
-  # Evaluate the agent
-  episode_reward = 0
-  for _ in range(100):
-    action, _ = model.predict(obs)
-    obs, reward, done, info = env.step(action)
-    env.render()
-    episode_reward += reward
-    if done or info.get('is_success', False):
-      print("Reward:", episode_reward, "Success?", info.get('is_success', False))
-      episode_reward = 0.0
-      obs = env.reset()
+.. note::
+
+    There are several ways to get better performances. For instance, `SB3 provides only vanilla Deep Q-Learning and has no extensions such as Double-DQN, Dueling-DQN and Prioritized Experience Replay <https://stable-baselines3.readthedocs.io/en/master/modules/dqn.html#notes>`_.
+    However, `eleurent/rl-agents <https://github.com/eleurent/rl-agents>`_'s implementation of DQN does provide those extensions, which yields better results. Improvements can also be obtained by changing the observation type or the model, see the :ref:`FAQ <faq>`.
 
 
 Examples on Google Colab
 -------------------------
 
-Use these notebooks to train driving policies on `highway-env`.
+Several scripts and notebooks to train driving policies on `highway-env` are available `on this page <https://github.com/eleurent/highway-env/tree/master/scripts>`_.
+Here are a few of them:
 
-.. |parking_mb|  image:: https://colab.research.google.com/assets/colab-badge.svg
-   :target: https://colab.research.google.com/github/eleurent/highway-env/blob/master/scripts/parking_model_based.ipynb
+.. |highway_dqn_cnn|  image:: https://colab.research.google.com/assets/colab-badge.svg
+   :target: https://colab.research.google.com/github/eleurent/highway-env/blob/master/scripts/sb3_highway_dqn_cnn.ipynb
 .. |planning_hw|  image:: https://colab.research.google.com/assets/colab-badge.svg
    :target: https://colab.research.google.com/github/eleurent/highway-env/blob/master/scripts/highway_planning.ipynb
+.. |parking_mb|  image:: https://colab.research.google.com/assets/colab-badge.svg
+   :target: https://colab.research.google.com/github/eleurent/highway-env/blob/master/scripts/parking_model_based.ipynb
 .. |parking_her|  image:: https://colab.research.google.com/assets/colab-badge.svg
    :target: https://colab.research.google.com/github/eleurent/highway-env/blob/master/scripts/parking_her.ipynb
 .. |dqn_social|  image:: https://colab.research.google.com/assets/colab-badge.svg
    :target: https://colab.research.google.com/github/eleurent/highway-env/blob/master/scripts/intersection_social_dqn.ipynb
 
-- A Model-based Reinforcement Learning tutorial on Parking |parking_mb|
-
-  A tutorial written for `RLSS 2019 <https://rlss.inria.fr/>`_ and demonstrating the principle of model-based
-  reinforcement learning on the `parking-v0` task.
-
-- Trajectory Planning on Highway |planning_hw|
-
-  Plan a trajectory on `highway-v0` using the `OPD` :cite:`Hren2008` implementation from
-  `rl-agents <https://github.com/eleurent/rl-agents>`_.
-
-- Parking with Hindsight Experience Replay |parking_her|
-
-  Train a goal-conditioned `parking-v0` policy using the :cite:`Andrychowicz2017` implementation
-  from `stable-baselines <https://github.com/hill-a/stable-baselines>`_.
-
-- Intersection with DQN and social attention |dqn_social|
-
-  Train an `intersection-v0` crossing policy using the social attention architecture :cite:`Leurent2019social` and the DQN implementation from `rl-agents <https://github.com/eleurent/rl-agents>`_.
+- | Highway with image observations and a CNN model |highway_dqn_cnn|
+  | Train SB3's DQN on `highway-fast-v0` , but using :ref:`image observations <Grayscale Image>` and a CNN model for the value function.
+- | Trajectory Planning on Highway |planning_hw|
+  | Plan a trajectory on `highway-v0` using the `OPD` :cite:`Hren2008` implementation from `eleurent/rl-agents <https://github.com/eleurent/rl-agents>`_.
+- | A Model-based Reinforcement Learning tutorial on Parking |parking_mb|
+  | A tutorial written for `RLSS 2019 <https://rlss.inria.fr/>`_ and demonstrating the principle of model-based reinforcement learning on the `parking-v0` task.
+- | Parking with Hindsight Experience Replay |parking_her|
+  | Train a goal-conditioned `parking-v0` policy using the `HER` :cite:`Andrychowicz2017` implementation from `stable-baselines <https://github.com/hill-a/stable-baselines>`_.
+- | Intersection with DQN and social attention |dqn_social|
+  | Train an `intersection-v0` crossing policy using the social attention architecture :cite:`Leurent2019social` and the DQN implementation from `eleurent/rl-agents <https://github.com/eleurent/rl-agents>`_.

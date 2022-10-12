@@ -7,7 +7,7 @@ from highway_env.interval import polytope, vector_interval_section, integrator_i
     interval_negative_part, intervals_diff, intervals_product, LPV, interval_absolute_to_local, \
     interval_local_to_absolute
 from highway_env.road.road import Route, LaneIndex, Road
-from highway_env.types import Vector
+from highway_env.utils import Vector
 from highway_env.vehicle.behavior import LinearVehicle
 from highway_env.vehicle.controller import MDPVehicle
 from highway_env.vehicle.kinematics import Vehicle
@@ -363,7 +363,7 @@ class IntervalVehicle(LinearVehicle):
         self.trajectory.append(LinearVehicle.create_from(self))
         self.interval_trajectory.append(copy.deepcopy(self.interval))
 
-    def check_collision(self, other: 'RoadObject', dt: float) -> None:
+    def handle_collisions(self, other: 'RoadObject', dt: float) -> None:
         """
         Worst-case collision check.
 
@@ -374,10 +374,10 @@ class IntervalVehicle(LinearVehicle):
         :param dt: a timestep
         """
         if not isinstance(other, MDPVehicle):
-            super().check_collision(other)
+            super().handle_collisions(other)
             return
 
-        if not self.COLLISIONS_ENABLED or self.crashed or other is self:
+        if not self.collidable or self.crashed or other is self:
             return
 
         # Fast rectangular pre-check

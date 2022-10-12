@@ -5,7 +5,7 @@ import pygame
 
 from highway_env.road.lane import LineType, AbstractLane
 from highway_env.road.road import Road
-from highway_env.types import Vector
+from highway_env.utils import Vector
 from highway_env.vehicle.graphics import VehicleGraphics
 from highway_env.vehicle.objects import Obstacle, Landmark
 
@@ -104,7 +104,8 @@ class LaneGraphics(object):
 
     """A visualization of a lane."""
 
-    STRIPE_SPACING: float = 5
+    # See https://www.researchgate.net/figure/French-road-traffic-lane-description-and-specification_fig4_261170641
+    STRIPE_SPACING: float = 4.33
     """ Offset between stripes [m]"""
 
     STRIPE_LENGTH: float = 3
@@ -295,7 +296,7 @@ class RoadObjectGraphics:
         """
         o = object_
         s = pygame.Surface((surface.pix(o.LENGTH), surface.pix(o.LENGTH)), pygame.SRCALPHA)  # per-pixel alpha
-        rect = (0, surface.pix(o.WIDTH) / 2 - surface.pix(o.WIDTH) / 2, surface.pix(o.LENGTH), surface.pix(o.WIDTH))
+        rect = (0, surface.pix(o.LENGTH / 2 - o.WIDTH / 2), surface.pix(o.LENGTH), surface.pix(o.WIDTH))
         pygame.draw.rect(s, cls.get_color(o, transparent), rect, 0)
         pygame.draw.rect(s, cls.BLACK, rect, 1)
         if not offscreen:  # convert_alpha throws errors in offscreen mode TODO() Explain why
@@ -339,7 +340,7 @@ class RoadObjectGraphics:
         color = cls.DEFAULT_COLOR
 
         if isinstance(object_, Obstacle):
-            if object_.hit:
+            if object_.crashed:
                 # indicates failure
                 color = cls.RED
             else:

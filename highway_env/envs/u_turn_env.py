@@ -1,3 +1,5 @@
+from typing import Dict, Text
+
 import numpy as np
 from gym.envs.registration import register
 
@@ -26,6 +28,7 @@ class UTurnEnv(AbstractEnv):
             },
             "action": {
                 "type": "DiscreteMetaAction",
+                "target_speeds": [8, 16, 24]
             },
             "screen_width": 789,
             "screen_height": 289,
@@ -34,6 +37,7 @@ class UTurnEnv(AbstractEnv):
             "left_lane_reward": 0.1,  # Reward received for maintaining left most lane.
             "high_speed_reward": 0.4,  # Reward received for maintaining cruising speed.
             "reward_speed_range": [8, 24],
+            "normalize_reward": True,
             "offroad_terminal": False
         })
         return config
@@ -44,32 +48,30 @@ class UTurnEnv(AbstractEnv):
         :param action: the action performed
         :return: the reward of the state-action transition
         """
+        rewards = self._rewards(action)
+        reward = sum(self.config.get(name, 0) * reward for name, reward in rewards.items())
+        if self.config["normalize_reward"]:
+            reward = utils.lmap(reward, [self.config["collision_reward"],
+                                         self.config["high_speed_reward"] + self.config["left_lane_reward"]], [0, 1])
+        reward *= rewards["on_road_reward"]
+        return reward
+
+    def _rewards(self, action: int) -> Dict[Text, float]:
         neighbours = self.road.network.all_side_lanes(self.vehicle.lane_index)
         lane = self.vehicle.lane_index[2]
         scaled_speed = utils.lmap(self.vehicle.speed, self.config["reward_speed_range"], [0, 1])
-        reward = \
-            + self.config["collision_reward"] * self.vehicle.crashed \
-            + self.config["left_lane_reward"] * lane / max(len(neighbours) - 1, 1) \
-            + self.config["high_speed_reward"] * np.clip(scaled_speed, 0, 1)
-        reward = utils.lmap(reward,
-                            [self.config["collision_reward"],
-                             self.config["high_speed_reward"] + self.config["left_lane_reward"]], [0, 1])
-        reward = 0 if not self.vehicle.on_road else reward
-        return reward
+        return {
+            "collision_reward": self.vehicle.crashed,
+            "left_lane_reward": lane / max(len(neighbours) - 1, 1),
+            "high_speed_reward": np.clip(scaled_speed, 0, 1),
+            "on_road_reward": self.vehicle.on_road
+        }
 
-    def _is_terminal(self) -> bool:
-        """
-        The episode is over if the ego vehicle crashed or the time is out.
-        """
-        return self.vehicle.crashed or \
-            self.steps >= self.config["duration"]
+    def _is_terminated(self) -> bool:
+        return self.vehicle.crashed
 
-    def _cost(self, action: int) -> float:
-        """
-        The constraint signal is the time spent driving on the opposite lane
-        and occurrence of collisions.
-        """
-        return float(self.vehicle.crashed)
+    def _is_truncated(self) -> bool:
+        return self.time >= self.config["duration"]
 
     def _reset(self) -> np.ndarray:
         self._make_road()
@@ -136,10 +138,6 @@ class UTurnEnv(AbstractEnv):
                                                      speed=16)
         # Stronger anticipation for the turn
         ego_vehicle.PURSUIT_TAU = MDPVehicle.TAU_HEADING
-        # Lower speed range
-        ego_vehicle.SPEED_MIN = 8
-        ego_vehicle.SPEED_MAX = 24
-        ego_vehicle.SPEED_COUNT = 3
         try:
             ego_vehicle.plan_route_to("d")
         except AttributeError:
@@ -156,8 +154,8 @@ class UTurnEnv(AbstractEnv):
         # Vehicle 1: Blocking the ego vehicle
         vehicle = vehicles_type.make_on_lane(self.road,
                                                    ("a", "b", 0),
-                                                   longitudinal=25 + self.np_random.randn()*position_deviation,
-                                                   speed=13.5 + self.np_random.randn() * speed_deviation)
+                                                   longitudinal=25 + self.np_random.normal()*position_deviation,
+                                                   speed=13.5 + self.np_random.normal() * speed_deviation)
         vehicle.plan_route_to('d')
         vehicle.randomize_behavior()
         self.road.vehicles.append(vehicle)
@@ -165,8 +163,8 @@ class UTurnEnv(AbstractEnv):
         # Vehicle 2: Forcing risky overtake
         vehicle = vehicles_type.make_on_lane(self.road,
                                                    ("a", "b", 1),
-                                                   longitudinal=56 + self.np_random.randn()*position_deviation,
-                                                   speed=14.5 + self.np_random.randn() * speed_deviation)
+                                                   longitudinal=56 + self.np_random.normal()*position_deviation,
+                                                   speed=14.5 + self.np_random.normal() * speed_deviation)
         vehicle.plan_route_to('d')
         # vehicle.randomize_behavior()
         self.road.vehicles.append(vehicle)
@@ -174,8 +172,8 @@ class UTurnEnv(AbstractEnv):
         # Vehicle 3: Blocking the ego vehicle
         vehicle = vehicles_type.make_on_lane(self.road,
                                                    ("b", "c", 1),
-                                                   longitudinal=0.5 + self.np_random.randn()*position_deviation,
-                                                   speed=4.5 + self.np_random.randn() * speed_deviation)
+                                                   longitudinal=0.5 + self.np_random.normal()*position_deviation,
+                                                   speed=4.5 + self.np_random.normal() * speed_deviation)
         vehicle.plan_route_to('d')
         # vehicle.randomize_behavior()
         self.road.vehicles.append(vehicle)
@@ -183,8 +181,8 @@ class UTurnEnv(AbstractEnv):
         # Vehicle 4: Forcing risky overtake
         vehicle = vehicles_type.make_on_lane(self.road,
                                                    ("b", "c", 0),
-                                                   longitudinal=17.5 + self.np_random.randn()*position_deviation,
-                                                   speed=5.5 + self.np_random.randn() * speed_deviation)
+                                                   longitudinal=17.5 + self.np_random.normal()*position_deviation,
+                                                   speed=5.5 + self.np_random.normal() * speed_deviation)
         vehicle.plan_route_to('d')
         # vehicle.randomize_behavior()
         self.road.vehicles.append(vehicle)
@@ -192,8 +190,8 @@ class UTurnEnv(AbstractEnv):
         # Vehicle 5: Blocking the ego vehicle
         vehicle = vehicles_type.make_on_lane(self.road,
                                                    ("c", "d", 0),
-                                                   longitudinal=1 + self.np_random.randn()*position_deviation,
-                                                   speed=3.5 + self.np_random.randn() * speed_deviation)
+                                                   longitudinal=1 + self.np_random.normal()*position_deviation,
+                                                   speed=3.5 + self.np_random.normal() * speed_deviation)
         vehicle.plan_route_to('d')
         # vehicle.randomize_behavior()
         self.road.vehicles.append(vehicle)
@@ -201,8 +199,8 @@ class UTurnEnv(AbstractEnv):
         # Vehicle 6: Forcing risky overtake
         vehicle = vehicles_type.make_on_lane(self.road,
                                                    ("c", "d", 1),
-                                                   longitudinal=30 + self.np_random.randn()*position_deviation,
-                                                   speed=5.5 + self.np_random.randn() * speed_deviation)
+                                                   longitudinal=30 + self.np_random.normal()*position_deviation,
+                                                   speed=5.5 + self.np_random.normal() * speed_deviation)
         vehicle.plan_route_to('d')
         # vehicle.randomize_behavior()
         self.road.vehicles.append(vehicle)

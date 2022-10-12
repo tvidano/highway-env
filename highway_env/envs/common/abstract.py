@@ -1,8 +1,9 @@
 import copy
 import os
-from typing import List, Tuple, Optional, Callable
+from typing import List, Tuple, Optional, Callable, TypeVar, Generic, Union, Dict, Text
 import gym
 from gym import Wrapper
+from gym.wrappers import RecordVideo
 from gym.utils import seeding
 import numpy as np
 
@@ -15,7 +16,7 @@ from highway_env.vehicle.behavior import IDMVehicle, LinearVehicle
 from highway_env.vehicle.controller import MDPVehicle
 from highway_env.vehicle.kinematics import Vehicle
 
-Observation = np.ndarray
+Observation = TypeVar("Observation")
 
 
 class AbstractEnv(gym.Env):
@@ -29,22 +30,20 @@ class AbstractEnv(gym.Env):
     """
     observation_type: ObservationType
     action_type: ActionType
-    _monitor: Optional[gym.wrappers.Monitor]
+    _record_video_wrapper: Optional[RecordVideo]
     metadata = {
-        'render.modes': ['human', 'rgb_array'],
+        'render_modes': ['human', 'rgb_array'],
     }
 
-    PERCEPTION_DISTANCE = 6.0 * MDPVehicle.SPEED_MAX
+    PERCEPTION_DISTANCE = 5.0 * Vehicle.MAX_SPEED
     """The maximum distance of any vehicle present in the observation [m]"""
 
-    def __init__(self, config: dict = None) -> None:
+    def __init__(self, config: dict = None, render_mode: Optional[str] = None) -> None:
+        super().__init__()
+
         # Configuration
         self.config = self.default_config()
         self.configure(config)
-
-        # Seeding
-        self.np_random = None
-        self.seed()
 
         # Scene
         self.road = None
@@ -64,7 +63,7 @@ class AbstractEnv(gym.Env):
 
         # Rendering
         self.viewer = None
-        self._monitor = None
+        self._record_video_wrapper = None
         self.rendering_mode = 'human'
         self.enable_auto_render = False
 
@@ -110,24 +109,21 @@ class AbstractEnv(gym.Env):
             "real_time_rendering": False
         }
 
-    def seed(self, seed: int = None) -> List[int]:
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
-
     def configure(self, config: dict) -> None:
         if config:
             self.config.update(config)
 
     def update_metadata(self, video_real_time_ratio=2):
         frames_freq = self.config["simulation_frequency"] \
-            if self._monitor else self.config["policy_frequency"]
+            if self._record_video_wrapper else self.config["policy_frequency"]
         self.metadata['video.frames_per_second'] = video_real_time_ratio * frames_freq
 
     def define_spaces(self) -> None:
         """
         Set the types and spaces of observation and action from config.
         """
-        self.observation_type = observation_factory(self, self.config["observation"])
+        self.observation_type = observation_factory(
+            self, self.config["observation"])
         self.action_type = action_factory(self, self.config["action"])
         self.observation_space = self.observation_type.space()
         self.action_space = self.action_type.space()
@@ -141,7 +137,19 @@ class AbstractEnv(gym.Env):
         """
         raise NotImplementedError
 
-    def _is_terminal(self) -> bool:
+    def _rewards(self, action: Action) -> Dict[Text, float]:
+        """
+        Returns a multi-objective vector of rewards.
+
+        If implemented, this reward vector should be aggregated into a scalar in _reward().
+        This vector value should only be returned inside the info dict.
+
+        :param action: the last action performed
+        :return: a dict of {'reward_name': reward_value}
+        """
+        raise NotImplementedError
+
+    def _is_terminated(self) -> bool:
         """
         Check whether the current state is a terminal state
 
@@ -149,7 +157,15 @@ class AbstractEnv(gym.Env):
         """
         raise NotImplementedError
 
-    def _info(self, obs: Observation, action: Action) -> dict:
+    def _is_truncated(self) -> bool:
+        """
+        Check we truncate the episode at the current step
+
+        :return: is the episode truncated
+        """
+        raise NotImplementedError
+
+    def _info(self, obs: Observation, action: Optional[Action] = None) -> dict:
         """
         Return a dictionary of additional information
 
@@ -163,34 +179,32 @@ class AbstractEnv(gym.Env):
             "action": action,
         }
         try:
-            info["cost"] = self._cost(action)
+            info["rewards"] = self._rewards(action)
         except NotImplementedError:
             pass
         return info
 
-    def _cost(self, action: Action) -> float:
-        """
-        A constraint metric, for budgeted MDP.
-
-        If a constraint is defined, it must be used with an alternate reward that doesn't contain it as a penalty.
-        :param action: the last action performed
-        :return: the constraint signal, the alternate (constraint-free) reward
-        """
-        raise NotImplementedError
-
-    def reset(self) -> Observation:
+    def reset(self,
+              *,
+              seed: Optional[int] = None,
+              options: Optional[dict] = None,
+              ) -> Tuple[Observation, dict]:
         """
         Reset the environment to it's initial configuration
 
         :return: the observation of the reset state
         """
         self.update_metadata()
-        self.define_spaces()  # First, to set the controlled vehicle class depending on action space
+        # First, to set the controlled vehicle class depending on action space
+        self.define_spaces()
         self.time = self.steps = 0
         self.done = False
         self._reset()
-        self.define_spaces()  # Second, to link the obs and actions to the vehicles once the scene is created
-        return self.observation_type.observe()
+        # Second, to link the obs and actions to the vehicles once the scene is created
+        self.define_spaces()
+        obs = self.observation_type.observe()
+        info = self._info(obs, action=self.action_space.sample())
+        return obs, info
 
     def _reset(self) -> None:
         """
@@ -200,7 +214,7 @@ class AbstractEnv(gym.Env):
         """
         raise NotImplementedError()
 
-    def step(self, action: Action) -> Tuple[Observation, float, bool, dict]:
+    def step(self, action: Action) -> Tuple[Observation, float, bool, bool, dict]:
         """
         Perform an action and step the environment dynamics.
 
@@ -208,34 +222,37 @@ class AbstractEnv(gym.Env):
         for several simulation timesteps until the next decision making step.
 
         :param action: the action performed by the ego-vehicle
-        :return: a tuple (observation, reward, terminal, info)
+        :return: a tuple (observation, reward, terminated, truncated, info)
         """
         if self.road is None or self.vehicle is None:
-            raise NotImplementedError("The road and vehicle must be initialized in the environment implementation")
+            raise NotImplementedError(
+                "The road and vehicle must be initialized in the environment implementation")
 
-        self.steps += 1
+        self.time += 1 / self.config["policy_frequency"]
         self._simulate(action)
 
         obs = self.observation_type.observe()
         reward = self._reward(action)
-        terminal = self._is_terminal()
+        terminated = self._is_terminated()
+        truncated = self._is_truncated()
         info = self._info(obs, action)
 
-        return obs, reward, terminal, info
+        return obs, reward, terminated, truncated, info
 
     def _simulate(self, action: Optional[Action] = None) -> None:
         """Perform several steps of simulation with constant action."""
-        frames = int(self.config["simulation_frequency"] // self.config["policy_frequency"])
+        frames = int(self.config["simulation_frequency"] //
+                     self.config["policy_frequency"])
         for frame in range(frames):
             # Forward action to the vehicle
             if action is not None \
                     and not self.config["manual_control"] \
-                    and self.time % int(self.config["simulation_frequency"] // self.config["policy_frequency"]) == 0:
+                    and self.steps % int(self.config["simulation_frequency"] // self.config["policy_frequency"]) == 0:
                 self.action_type.act(action)
 
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
-            self.time += 1
+            self.steps += 1
 
             # Automatically render intermediate simulation steps if a viewer has been launched
             # Ignored if the rendering is done offscreen
@@ -278,34 +295,10 @@ class AbstractEnv(gym.Env):
         self.viewer = None
 
     def get_available_actions(self) -> List[int]:
-        """
-        Get the list of currently available actions.
+        return self.action_type.get_available_actions()
 
-        Lane changes are not available on the boundary of the road, and speed changes are not available at
-        maximal or minimal speed.
-
-        :return: the list of available actions
-        """
-        if not isinstance(self.action_type, DiscreteMetaAction):
-            raise ValueError("Only discrete meta-actions can be unavailable.")
-        actions = [self.action_type.actions_indexes['IDLE']]
-        for l_index in self.road.network.side_lanes(self.vehicle.lane_index):
-            if l_index[2] < self.vehicle.lane_index[2] \
-                    and self.road.network.get_lane(l_index).is_reachable_from(self.vehicle.position) \
-                    and self.action_type.lateral:
-                actions.append(self.action_type.actions_indexes['LANE_LEFT'])
-            if l_index[2] > self.vehicle.lane_index[2] \
-                    and self.road.network.get_lane(l_index).is_reachable_from(self.vehicle.position) \
-                    and self.action_type.lateral:
-                actions.append(self.action_type.actions_indexes['LANE_RIGHT'])
-        if self.vehicle.speed_index < self.vehicle.SPEED_COUNT - 1 and self.action_type.longitudinal:
-            actions.append(self.action_type.actions_indexes['FASTER'])
-        if self.vehicle.speed_index > 0 and self.action_type.longitudinal:
-            actions.append(self.action_type.actions_indexes['SLOWER'])
-        return actions
-
-    def set_monitor(self, monitor: gym.wrappers.Monitor):
-        self._monitor = monitor
+    def set_record_video_wrapper(self, wrapper: RecordVideo):
+        self._record_video_wrapper = wrapper
         self.update_metadata()
 
     def _automatic_rendering(self) -> None:
@@ -313,12 +306,12 @@ class AbstractEnv(gym.Env):
         Automatically render the intermediate frames while an action is still ongoing.
 
         This allows to render the whole video and not only single steps corresponding to agent decision-making.
-        If a monitor has been set, use its video recorder to capture intermediate frames.
+        If a RecordVideo wrapper has been set, use it to capture intermediate frames.
         """
         if self.viewer is not None and self.enable_auto_render:
 
-            if self._monitor and self._monitor.video_recorder:
-                self._monitor.video_recorder.capture_frame()
+            if self._record_video_wrapper and self._record_video_wrapper.video_recorder:
+                self._record_video_wrapper.video_recorder.capture_frame()
             else:
                 self.render(self.rendering_mode)
 
@@ -358,7 +351,8 @@ class AbstractEnv(gym.Env):
         if preferred_lane:
             for v in env_copy.road.vehicles:
                 if isinstance(v, IDMVehicle):
-                    v.route = [(lane[0], lane[1], preferred_lane) for lane in v.route]
+                    v.route = [(lane[0], lane[1], preferred_lane)
+                               for lane in v.route]
                     # Vehicle with lane preference are also less cautious
                     v.LANE_CHANGE_MAX_BRAKING_IMPOSED = 1000
         return env_copy
@@ -402,7 +396,7 @@ class AbstractEnv(gym.Env):
         result = cls.__new__(cls)
         memo[id(self)] = result
         for k, v in self.__dict__.items():
-            if k not in ['viewer', '_monitor']:
+            if k not in ['viewer', '_record_video_wrapper']:
                 setattr(result, k, copy.deepcopy(v, memo))
             else:
                 setattr(result, k, None)
@@ -411,7 +405,8 @@ class AbstractEnv(gym.Env):
 
 class MultiAgentWrapper(Wrapper):
     def step(self, action):
-        obs, reward, done, info = super().step(action)
+        obs, reward, terminated, truncated, info = super().step(action)
         reward = info["agents_rewards"]
-        done = info["agents_dones"]
-        return obs, reward, done, info
+        terminated = info["agents_terminated"]
+        truncated = info["agents_truncated"]
+        return obs, reward, terminated, truncated, info

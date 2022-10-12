@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, Dict, Text
 
 from gym.envs.registration import register
 import numpy as np
@@ -23,6 +23,7 @@ class RoundaboutEnv(AbstractEnv):
             },
             "action": {
                 "type": "DiscreteMetaAction",
+                "target_speeds": [0, 8, 16]
             },
             "incoming_vehicle_destination": None,
             "collision_reward": -1,
@@ -32,23 +33,33 @@ class RoundaboutEnv(AbstractEnv):
             "screen_width": 600,
             "screen_height": 600,
             "centering_position": [0.5, 0.6],
-            "duration": 11
+            "duration": 11,
+            "normalize_reward": True
         })
         return config
 
     def _reward(self, action: int) -> float:
-        lane_change = action == 0 or action == 2
-        reward = self.config["collision_reward"] * self.vehicle.crashed \
-            + self.config["high_speed_reward"] * \
-                 MDPVehicle.get_speed_index(self.vehicle) / max(MDPVehicle.SPEED_COUNT - 1, 1) \
-            + self.config["lane_change_reward"] * lane_change
-        return utils.lmap(reward,
-                          [self.config["collision_reward"] + self.config["lane_change_reward"],
-                           self.config["high_speed_reward"]], [0, 1])
+        rewards = self._rewards(action)
+        reward = sum(self.config.get(name, 0) * reward for name, reward in rewards.items())
+        if self.config["normalize_reward"]:
+            reward = utils.lmap(reward, [self.config["collision_reward"], self.config["high_speed_reward"]], [0, 1])
+        reward *= rewards["on_road_reward"]
+        return reward
 
-    def _is_terminal(self) -> bool:
-        """The episode is over when a collision occurs or when the access ramp has been passed."""
-        return self.vehicle.crashed or self.steps >= self.config["duration"]
+    def _rewards(self, action: int) -> Dict[Text, float]:
+        return {
+            "collision_reward": self.vehicle.crashed,
+            "high_speed_reward":
+                 MDPVehicle.get_speed_index(self.vehicle) / (MDPVehicle.DEFAULT_TARGET_SPEEDS.size - 1),
+            "lane_change_reward": action in [0, 2],
+            "on_road_reward": self.vehicle.on_road
+        }
+
+    def _is_terminated(self) -> bool:
+        return self.vehicle.crashed
+
+    def _is_truncated(self) -> bool:
+        return self.time >= self.config["duration"]
 
     def _reset(self) -> None:
         self._make_road()
@@ -140,9 +151,6 @@ class RoundaboutEnv(AbstractEnv):
             ego_vehicle.plan_route_to("nxs")
         except AttributeError:
             pass
-        MDPVehicle.SPEED_MIN = 0
-        MDPVehicle.SPEED_MAX = 16
-        MDPVehicle.SPEED_COUNT = 3
         self.road.vehicles.append(ego_vehicle)
         self.vehicle = ego_vehicle
 
@@ -151,8 +159,8 @@ class RoundaboutEnv(AbstractEnv):
         other_vehicles_type = utils.class_from_path(self.config["other_vehicles_type"])
         vehicle = other_vehicles_type.make_on_lane(self.road,
                                                    ("we", "sx", 1),
-                                                   longitudinal=5 + self.np_random.randn()*position_deviation,
-                                                   speed=16 + self.np_random.randn() * speed_deviation)
+                                                   longitudinal=5 + self.np_random.normal()*position_deviation,
+                                                   speed=16 + self.np_random.normal() * speed_deviation)
 
         if self.config["incoming_vehicle_destination"] is not None:
             destination = destinations[self.config["incoming_vehicle_destination"]]
@@ -166,8 +174,8 @@ class RoundaboutEnv(AbstractEnv):
         for i in list(range(1, 2)) + list(range(-1, 0)):
             vehicle = other_vehicles_type.make_on_lane(self.road,
                                                        ("we", "sx", 0),
-                                                       longitudinal=20*i + self.np_random.randn()*position_deviation,
-                                                       speed=16 + self.np_random.randn() * speed_deviation)
+                                                       longitudinal=20*i + self.np_random.normal()*position_deviation,
+                                                       speed=16 + self.np_random.normal() * speed_deviation)
             vehicle.plan_route_to(self.np_random.choice(destinations))
             vehicle.randomize_behavior()
             self.road.vehicles.append(vehicle)
@@ -175,8 +183,8 @@ class RoundaboutEnv(AbstractEnv):
         # Entering vehicle
         vehicle = other_vehicles_type.make_on_lane(self.road,
                                                    ("eer", "ees", 0),
-                                                   longitudinal=50 + self.np_random.randn() * position_deviation,
-                                                   speed=16 + self.np_random.randn() * speed_deviation)
+                                                   longitudinal=50 + self.np_random.normal() * position_deviation,
+                                                   speed=16 + self.np_random.normal() * speed_deviation)
         vehicle.plan_route_to(self.np_random.choice(destinations))
         vehicle.randomize_behavior()
         self.road.vehicles.append(vehicle)
