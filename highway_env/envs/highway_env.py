@@ -1,3 +1,5 @@
+from typing import Dict, Text
+
 import numpy as np
 from gym.envs.registration import register
 
@@ -7,6 +9,9 @@ from highway_env.envs.common.action import Action
 from highway_env.road.road import Road, RoadNetwork
 from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
+from highway_env.vehicle.kinematics import Vehicle
+
+Observation = np.ndarray
 
 
 class HighwayEnv(AbstractEnv):
@@ -41,6 +46,7 @@ class HighwayEnv(AbstractEnv):
                                        # lower speeds according to config["reward_speed_range"].
             "lane_change_reward": 0,   # The reward received at each lane change action.
             "reward_speed_range": [20, 30],
+            "normalize_reward": True,
             "offroad_terminal": False
         })
         return config
@@ -61,19 +67,20 @@ class HighwayEnv(AbstractEnv):
 
         self.controlled_vehicles = []
         for others in other_per_controlled:
-            controlled_vehicle = self.action_type.vehicle_class.create_random(
+            vehicle = Vehicle.create_random(
                 self.road,
                 speed=25,
                 lane_id=self.config["initial_lane_id"],
                 spacing=self.config["ego_spacing"]
             )
-            self.controlled_vehicles.append(controlled_vehicle)
-            self.road.vehicles.append(controlled_vehicle)
+            vehicle = self.action_type.vehicle_class(self.road, vehicle.position, vehicle.heading, vehicle.speed)
+            self.controlled_vehicles.append(vehicle)
+            self.road.vehicles.append(vehicle)
 
             for _ in range(others):
-                self.road.vehicles.append(
-                    other_vehicles_type.create_random(self.road, spacing=1 / self.config["vehicles_density"])
-                )
+                vehicle = other_vehicles_type.create_random(self.road, spacing=1 / self.config["vehicles_density"])
+                vehicle.randomize_behavior()
+                self.road.vehicles.append(vehicle)
 
     def _reward(self, action: Action) -> float:
         """
@@ -81,33 +88,73 @@ class HighwayEnv(AbstractEnv):
         :param action: the last action performed
         :return: the corresponding reward
         """
+        rewards = self._rewards(action)
+        reward = sum(self.config.get(name, 0) * reward for name, reward in rewards.items())
+        if self.config["normalize_reward"]:
+            reward = utils.lmap(reward,
+                                [self.config["collision_reward"],
+                                 self.config["high_speed_reward"] + self.config["right_lane_reward"]],
+                                [0, 1])
+        reward *= rewards['on_road_reward']
+        return reward
+
+    def _rewards(self, action: Action) -> Dict[Text, float]:
         neighbours = self.road.network.all_side_lanes(self.vehicle.lane_index)
         lane = self.vehicle.target_lane_index[2] if isinstance(self.vehicle, ControlledVehicle) \
             else self.vehicle.lane_index[2]
-        scaled_speed = utils.lmap(self.vehicle.speed, self.config["reward_speed_range"], [0, 1])
-        reward = \
-            + self.config["collision_reward"] * self.vehicle.crashed \
-            + self.config["right_lane_reward"] * lane / max(len(neighbours) - 1, 1) \
-            + self.config["high_speed_reward"] * np.clip(scaled_speed, 0, 1)
-        reward = utils.lmap(reward,
-                          [self.config["collision_reward"],
-                           self.config["high_speed_reward"] + self.config["right_lane_reward"]],
-                          [0, 1])
-        reward = 0 if not self.vehicle.on_road else reward
-        return reward
+        # Use forward speed rather than speed, see https://github.com/eleurent/highway-env/issues/268
+        forward_speed = self.vehicle.speed * np.cos(self.vehicle.heading)
+        scaled_speed = utils.lmap(forward_speed, self.config["reward_speed_range"], [0, 1])
+        return {
+            "collision_reward": float(self.vehicle.crashed),
+            "right_lane_reward": lane / max(len(neighbours) - 1, 1),
+            "high_speed_reward": np.clip(scaled_speed, 0, 1),
+            "on_road_reward": float(self.vehicle.on_road)
+        }
 
-    def _is_terminal(self) -> bool:
-        """The episode is over if the ego vehicle crashed or the time is out."""
+    def _is_terminated(self) -> bool:
+        """The episode is over if the ego vehicle crashed."""
         return self.vehicle.crashed or \
-            self.steps >= self.config["duration"] or \
             (self.config["offroad_terminal"] and not self.vehicle.on_road)
 
-    def _cost(self, action: int) -> float:
-        """The cost signal is the occurrence of collision."""
-        return float(self.vehicle.crashed)
+    def _is_truncated(self) -> bool:
+        """The episode is over if the ego vehicle crashed or the time is out."""
+        return self.time >= self.config["duration"]
+
+
+class HighwayEnvFast(HighwayEnv):
+    """
+    A variant of highway-v0 with faster execution:
+        - lower simulation frequency
+        - fewer vehicles in the scene (and fewer lanes, shorter episode duration)
+        - only check collision of controlled vehicles with others
+    """
+    @classmethod
+    def default_config(cls) -> dict:
+        cfg = super().default_config()
+        cfg.update({
+            "simulation_frequency": 5,
+            "lanes_count": 3,
+            "vehicles_count": 20,
+            "duration": 30,  # [s]
+            "ego_spacing": 1.5,
+        })
+        return cfg
+
+    def _create_vehicles(self) -> None:
+        super()._create_vehicles()
+        # Disable collision check for uncontrolled vehicles
+        for vehicle in self.road.vehicles:
+            if vehicle not in self.controlled_vehicles:
+                vehicle.check_collisions = False
 
 
 register(
     id='highway-v0',
     entry_point='highway_env.envs:HighwayEnv',
+)
+
+register(
+    id='highway-fast-v0',
+    entry_point='highway_env.envs:HighwayEnvFast',
 )

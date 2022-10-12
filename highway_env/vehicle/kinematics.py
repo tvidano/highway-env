@@ -1,11 +1,12 @@
-from typing import Union, Optional
+from typing import Union, Optional, Tuple, List
 import numpy as np
+import copy
 from collections import deque
 
 from highway_env import utils
 from highway_env.road.road import Road, LaneIndex
 from highway_env.vehicle.objects import RoadObject, Obstacle, Landmark
-from highway_env.types import Vector
+from highway_env.utils import Vector
 
 
 class Vehicle(RoadObject):
@@ -17,45 +18,32 @@ class Vehicle(RoadObject):
     It's state is propagated depending on its steering and acceleration actions.
     """
 
-    COLLISIONS_ENABLED = True
-    """ Enable collision detection between vehicles """
-
     LENGTH = 5.0
     """ Vehicle length [m] """
     WIDTH = 2.0
     """ Vehicle width [m] """
-    DEFAULT_SPEEDS = [23, 25]
+    DEFAULT_INITIAL_SPEEDS = [23, 25]
     """ Range for random initial speeds [m/s] """
     MAX_SPEED = 40.
     """ Maximum reachable speed [m/s] """
+    MIN_SPEED = -40.
+    """ Minimum reachable speed [m/s] """
+    HISTORY_SIZE = 30
+    """ Length of the vehicle state history, for trajectory display"""
 
     def __init__(self,
                  road: Road,
                  position: Vector,
                  heading: float = 0,
-                 speed: float = 0):
+                 speed: float = 0,
+                 predition_type: str = 'constant_steering'):
         super().__init__(road, position, heading, speed)
+        self.prediction_type = predition_type
         self.action = {'steering': 0, 'acceleration': 0}
         self.crashed = False
         self.impact = None
         self.log = []
-        self.history = deque(maxlen=30)
-
-    @classmethod
-    def make_on_lane(cls, road: Road, lane_index: LaneIndex, longitudinal: float, speed: float = 0) -> "Vehicle":
-        """
-        Create a vehicle on a given lane at a longitudinal position.
-
-        :param road: the road where the vehicle is driving
-        :param lane_index: index of the lane where the vehicle is located
-        :param longitudinal: longitudinal position along the lane
-        :param speed: initial speed in [m/s]
-        :return: A vehicle with at the specified position
-        """
-        lane = road.network.get_lane(lane_index)
-        if speed is None:
-            speed = lane.speed_limit
-        return cls(road, lane.position(longitudinal, 0), lane.heading_at(longitudinal), speed)
+        self.history = deque(maxlen=self.HISTORY_SIZE)
 
     @classmethod
     def create_random(cls, road: Road,
@@ -87,7 +75,7 @@ class Vehicle(RoadObject):
             if lane.speed_limit is not None:
                 speed = road.np_random.uniform(0.7*lane.speed_limit, 0.8*lane.speed_limit)
             else:
-                speed = road.np_random.uniform(Vehicle.DEFAULT_SPEEDS[0], Vehicle.DEFAULT_SPEEDS[1])
+                speed = road.np_random.uniform(Vehicle.DEFAULT_INITIAL_SPEEDS[0], Vehicle.DEFAULT_INITIAL_SPEEDS[1])
         default_spacing = 12+1.0*speed
         offset = spacing * default_spacing * np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
         x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
@@ -107,6 +95,8 @@ class Vehicle(RoadObject):
         :return: a new vehicle at the same dynamical state
         """
         v = cls(vehicle.road, vehicle.position, vehicle.heading, vehicle.speed)
+        if hasattr(vehicle, 'color'):
+            v.color = vehicle.color
         return v
 
     def act(self, action: Union[dict, str] = None) -> None:
@@ -150,8 +140,8 @@ class Vehicle(RoadObject):
         self.action['acceleration'] = float(self.action['acceleration'])
         if self.speed > self.MAX_SPEED:
             self.action['acceleration'] = min(self.action['acceleration'], 1.0 * (self.MAX_SPEED - self.speed))
-        elif self.speed < -self.MAX_SPEED:
-            self.action['acceleration'] = max(self.action['acceleration'], 1.0 * (self.MAX_SPEED - self.speed))
+        elif self.speed < self.MIN_SPEED:
+            self.action['acceleration'] = max(self.action['acceleration'], 1.0 * (self.MIN_SPEED - self.speed))
 
     def on_state_update(self) -> None:
         if self.road:
@@ -160,44 +150,25 @@ class Vehicle(RoadObject):
             if self.road.record_history:
                 self.history.appendleft(self.create_from(self))
 
-    def check_collision(self, other: 'RoadObject', dt: float = 0) -> None:
-        """
-        Check for collision with another vehicle.
+    def predict_trajectory_constant_speed(self, times: np.ndarray) -> Tuple[List[np.ndarray], List[float]]:
+        if self.prediction_type == 'zero_steering':
+            action = {'acceleration': 0.0, 'steering': 0.0}
+        elif self.prediction_type == 'constant_steering':
+            action = {'acceleration': 0.0, 'steering': self.action['steering']}
+        else:
+            raise ValueError("Unknown predition type")
 
-        :param other: the other vehicle or object
-        :param dt: timestep to check for future collisions (at constant velocity)
-        """
-        if other is self:
-            return
+        dt = np.diff(np.concatenate(([0.0], times)))
 
-        if isinstance(other, Vehicle):
-            if not self.COLLISIONS_ENABLED or not other.COLLISIONS_ENABLED:
-                return
-            intersecting, will_intersect, transition = self._is_colliding(other, dt)
-            if will_intersect:
-                self.impact = transition / 2
-                other.impact = -transition / 2
-            if intersecting:
-                self.crashed = other.crashed = True
-        elif isinstance(other, Obstacle):
-            if not self.COLLISIONS_ENABLED:
-                return
-            intersecting, will_intersect, transition = self._is_colliding(other, dt)
-            if will_intersect:
-                self.impact = transition
-            if intersecting:
-                self.crashed = other.hit = True
-        elif isinstance(other, Landmark):
-            intersecting, will_intersect, transition = self._is_colliding(other, dt)
-            if intersecting:
-                other.hit = True
-
-    def _is_colliding(self, other, dt):
-        # Fast spherical pre-check
-        if np.linalg.norm(other.position - self.position) > self.LENGTH + self.speed * dt:
-            return False, False, np.zeros(2,)
-        # Accurate rectangular check
-        return utils.are_polygons_intersecting(self.polygon(), other.polygon(), self.velocity * dt, other.velocity * dt)
+        positions = []
+        headings = []
+        v = copy.deepcopy(self)
+        v.act(action)
+        for t in dt:
+            v.step(t)
+            positions.append(v.position.copy())
+            headings.append(v.heading)
+        return (positions, headings)
 
     @property
     def velocity(self) -> np.ndarray:
@@ -220,6 +191,15 @@ class Vehicle(RoadObject):
         else:
             return np.zeros((2,))
 
+    @property
+    def lane_offset(self) -> np.ndarray:
+        if self.lane is not None:
+            long, lat = self.lane.local_coordinates(self.position)
+            ang = self.lane.local_angle(self.heading, long)
+            return np.array([long, lat, ang])
+        else:
+            return np.zeros((3,))
+
     def to_dict(self, origin_vehicle: "Vehicle" = None, observe_intentions: bool = True) -> dict:
         d = {
             'presence': 1,
@@ -231,7 +211,10 @@ class Vehicle(RoadObject):
             'cos_h': self.direction[0],
             'sin_h': self.direction[1],
             'cos_d': self.destination_direction[0],
-            'sin_d': self.destination_direction[1]
+            'sin_d': self.destination_direction[1],
+            'long_off': self.lane_offset[0],
+            'lat_off': self.lane_offset[1],
+            'ang_off': self.lane_offset[2],
         }
         if not observe_intentions:
             d["cos_d"] = d["sin_d"] = 0

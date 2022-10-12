@@ -1,3 +1,5 @@
+from typing import Dict, Text
+
 import numpy as np
 from gym.envs.registration import register
 
@@ -43,20 +45,21 @@ class TwoWayEnv(AbstractEnv):
         :param action: the action performed
         :return: the reward of the state-action transition
         """
+        return sum(self.config.get(name, 0) * reward for name, reward in self._rewards(action).items())
+
+    def _rewards(self, action: int) -> Dict[Text, float]:
         neighbours = self.road.network.all_side_lanes(self.vehicle.lane_index)
+        return {
+            "high_speed_reward": self.vehicle.speed_index / (self.vehicle.target_speeds.size - 1),
+            "left_lane_reward": (len(neighbours) - 1 - self.vehicle.target_lane_index[2]) / (len(neighbours) - 1),
+        }
 
-        reward = self.config["high_speed_reward"] * self.vehicle.speed_index / (self.vehicle.SPEED_COUNT - 1) \
-            + self.config["left_lane_reward"] \
-                * (len(neighbours) - 1 - self.vehicle.target_lane_index[2]) / (len(neighbours) - 1)
-        return reward
-
-    def _is_terminal(self) -> bool:
+    def _is_terminated(self) -> bool:
         """The episode is over if the ego vehicle crashed or the time is out."""
         return self.vehicle.crashed
 
-    def _cost(self, action: int) -> float:
-        """The constraint signal is the time spent driving on the opposite lane, and occurrence of collisions."""
-        return float(self.vehicle.crashed) + float(self.vehicle.lane_index[2] == 0)/15
+    def _is_truncated(self) -> bool:
+        return False
 
     def _reset(self) -> np.ndarray:
         self._make_road()
@@ -99,17 +102,17 @@ class TwoWayEnv(AbstractEnv):
             self.road.vehicles.append(
                 vehicles_type(road,
                               position=road.network.get_lane(("a", "b", 1))
-                              .position(70+40*i + 10*self.np_random.randn(), 0),
+                              .position(70+40*i + 10*self.np_random.normal(), 0),
                               heading=road.network.get_lane(("a", "b", 1)).heading_at(70+40*i),
-                              speed=24 + 2*self.np_random.randn(),
+                              speed=24 + 2*self.np_random.normal(),
                               enable_lane_change=False)
             )
         for i in range(2):
             v = vehicles_type(road,
                               position=road.network.get_lane(("b", "a", 0))
-                              .position(200+100*i + 10*self.np_random.randn(), 0),
+                              .position(200+100*i + 10*self.np_random.normal(), 0),
                               heading=road.network.get_lane(("b", "a", 0)).heading_at(200+100*i),
-                              speed=20 + 5*self.np_random.randn(),
+                              speed=20 + 5*self.np_random.normal(),
                               enable_lane_change=False)
             v.target_lane_index = ("b", "a", 0)
             self.road.vehicles.append(v)
