@@ -11,6 +11,7 @@ from highway_env.envs.common.action import Action, DiscreteMetaAction
 from highway_env.road.road import Road, RoadNetwork
 from highway_env.utils import near_split
 from highway_env.vehicle.controller import ControlledVehicle
+from highway_env.vehicle.kinematics import Vehicle
 
 Observation = np.ndarray
 
