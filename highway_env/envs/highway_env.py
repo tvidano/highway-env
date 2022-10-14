@@ -174,11 +174,12 @@ class HighwayEnvLidar(HighwayEnv):
 
     def __init__(self, config: dict = None) -> None:
         super().__init__(config)
-        self.lidar_buffer = np.zeros((16, 4))  # stored lidar points:
+        # stored lidar points:
         #    0: position_x
         #    1: position_y
         #    2: velocity_x
         #    3: velocity_y
+        self.lidar_buffer = np.zeros((16, 4))
         self.lidar_count = 0
         self.current_time = 0.
 
@@ -189,6 +190,7 @@ class HighwayEnvLidar(HighwayEnv):
             "observation": {
                 "type": "AdaptiveLidarObservation"
             },
+            "vehicles_count": 20,
             "simulation_frequency": 8,  # [Hz]
             "policy_frequency": 4,  # [Hz]
             "duration": 30 * 1,  # [max steps per episode]

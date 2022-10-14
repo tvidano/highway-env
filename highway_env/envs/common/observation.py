@@ -585,16 +585,18 @@ class LidarObservation(ObservationType):
                  normalize: bool = True,
                  **kwargs):
         super().__init__(env, **kwargs)
-        self.cells = cells
-        self.maximum_range = maximum_range
+        self.cells = cells  # number of lidar rays.
+        self.maximum_range = maximum_range  # [m].
         self.normalize = normalize
+        # Width of discrete field of views [rad].
         self.angle = 2 * np.pi / self.cells
-        self.grid = np.ones((self.cells, 1)) * float('inf')
+        self.grid = np.ones((self.cells, 2)) * float('inf')
         self.origin = None
 
     def space(self) -> spaces.Space:
         high = 1 if self.normalize else self.maximum_range
-        return spaces.Box(shape=(self.cells, 2), low=-high, high=high, dtype=np.float32)
+        return spaces.Box(shape=(self.cells, 2), low=-high,
+                          high=high, dtype=np.float32)
 
     def observe(self) -> np.ndarray:
         obs = self.trace(self.observer_vehicle.position,
@@ -603,25 +605,39 @@ class LidarObservation(ObservationType):
             obs /= self.maximum_range
         return obs
 
-    def trace(self, origin: np.ndarray, origin_velocity: np.ndarray) -> np.ndarray:
+    def trace(self, origin: np.ndarray,
+              origin_velocity: np.ndarray) -> np.ndarray:
+        """
+        Find radial distance from |origin| to lidar responses. 
+
+        :param origin: center of where ray traces should start.
+        :param origin_velocity: velocity of the origin of the rays.
+        :return: distance and relative velocity of closest object in each cell.
+        """
+        # Reset origin location and grid of lidar points.
         self.origin = origin.copy()
         self.grid = np.ones((self.cells, 2)) * self.maximum_range
 
+        # Iterate through all road objects and vehicles.
         for obstacle in self.env.road.vehicles + self.env.road.objects:
             if obstacle is self.observer_vehicle or not obstacle.solid:
                 continue
             center_distance = np.linalg.norm(obstacle.position - origin)
             if center_distance > self.maximum_range:
                 continue
-            center_angle = self.position_to_angle(obstacle.position, origin)
-            center_index = self.angle_to_index(center_angle)
+            center_index = self.position_to_index(obstacle.position, origin)
+            # Assume distance is perpendicular to obstacle.
             distance = center_distance - obstacle.WIDTH / 2
+            # Use only the closest point in the containing grid.
             if distance <= self.grid[center_index, self.DISTANCE]:
                 direction = self.index_to_direction(center_index)
+                # Compute velocity of object relative to vehicle assuming
+                # direction is along the unit vector pointing to the center of
+                # the containing grid.
                 velocity = (obstacle.velocity - origin_velocity).dot(direction)
                 self.grid[center_index, :] = [distance, velocity]
 
-            # Angular sector covered by the obstacle
+            # Get all grid indices covered by the obstacle.
             corners = utils.rect_corners(
                 obstacle.position, obstacle.LENGTH, obstacle.WIDTH, obstacle.heading)
             angles = [self.position_to_angle(
@@ -635,7 +651,7 @@ class LidarObservation(ObservationType):
                 indexes = np.hstack(
                     [np.arange(start, self.cells), np.arange(0, end + 1)])
 
-            # Actual distance computation for these sections
+            # Update grid with actual distance computation for all sections.
             for index in indexes:
                 direction = self.index_to_direction(index)
                 ray = [origin, origin + self.maximum_range * direction]
@@ -646,17 +662,27 @@ class LidarObservation(ObservationType):
                     self.grid[index, :] = [distance, velocity]
         return self.grid
 
-    def position_to_angle(self, position: np.ndarray, origin: np.ndarray) -> float:
-        return np.arctan2(position[1] - origin[1], position[0] - origin[0]) + self.angle/2
+    def position_to_angle(self,
+                          position: np.ndarray,
+                          origin: np.ndarray) -> float:
+        """Get the observer's angle between the |origin| and |position|."""
+        return np.arctan2(position[1] - origin[1], position[0] - origin[0]) + \
+            self.angle/2
 
-    def position_to_index(self, position: np.ndarray, origin: np.ndarray) -> int:
+    def position_to_index(self,
+                          position: np.ndarray,
+                          origin: np.ndarray) -> int:
+        """Convert the position to the cell index that contains the position."""
         return self.angle_to_index(self.position_to_angle(position, origin))
 
     def angle_to_index(self, angle: float) -> int:
+        """Convert the angle to the cell index that contains the angle."""
         return int(np.floor(angle / self.angle)) % self.cells
 
     def index_to_direction(self, index: int) -> np.ndarray:
-        return np.array([[np.cos(index * self.angle)], [np.sin(index * self.angle)]])
+        """Get the unit vector pointing toward the center of the cell."""
+        return np.array([[np.cos(index * self.angle)],
+                         [np.sin(index * self.angle)]])
 
 
 class AdaptiveLidarObservation(LidarObservation):
@@ -684,15 +710,15 @@ class AdaptiveLidarObservation(LidarObservation):
 
         for obstacle in self.env.road.vehicles + self.env.road.objects:
             # Filter out ego-vehicle, and those outside of max range.
-            if obstacle is self.observer_vehicle:
+            if obstacle is self.observer_vehicle or not obstacle.solid:
                 continue
             center_distance = np.linalg.norm(obstacle.position - origin)
             if center_distance > self.maximum_range:
                 continue
             # Get the index of the lidar data that corresponds to that obstacle
-            center_angle = self.position_to_angle(obstacle.position, origin)
-            center_index = self.angle_to_index(center_angle)
-            # distance = center_distance - obstacle.WIDTH / 2
+            center_index = self.position_to_index(obstacle.position, origin)
+            # Assume distance is perpendicular to obstacle.
+            distance = center_distance - obstacle.WIDTH / 2
             # Update distance if obstacle is closer than current data.
             if center_distance <= self.grid[center_index, self.DISTANCE]:
                 # Assume perfect estimation of obstacle position and relative
@@ -700,10 +726,34 @@ class AdaptiveLidarObservation(LidarObservation):
                 direction = self.index_to_direction(center_index)
                 velocity = (obstacle.velocity - origin_velocity).dot(direction)
                 self.grid[center_index, :] = [center_distance,
-                                              obstacle.position[0], obstacle.position[1], velocity]
+                                              obstacle.position[0],
+                                              obstacle.position[1],
+                                              velocity]
 
-            # Removed a portion of LidarObservation.trace() that I didn't
-            # understand. It might be required, but I could see no use.
+            # Get all grid indices covered by the obstacle.
+            corners = utils.rect_corners(
+                obstacle.position, obstacle.LENGTH, obstacle.WIDTH, obstacle.heading)
+            angles = [self.position_to_angle(
+                corner, origin) for corner in corners]
+            min_angle, max_angle = min(angles), max(angles)
+            start, end = self.angle_to_index(
+                min_angle), self.angle_to_index(max_angle)
+            if start < end:
+                indexes = np.arange(start, end+1)
+            else:
+                indexes = np.hstack(
+                    [np.arange(start, self.cells), np.arange(0, end + 1)])
+
+            # Update grid with actual distance computation for all sections.
+            for index in indexes:
+                direction = self.index_to_direction(index)
+                ray = [origin, origin + self.maximum_range * direction]
+                distance = utils.distance_to_rect(ray, corners)
+                if distance <= self.grid[index, self.DISTANCE]:
+                    velocity = (obstacle.velocity -
+                                origin_velocity).dot(direction)
+                    self.grid[index, :] = [distance, obstacle.position[0],
+                                           obstacle.position[1], velocity]
         return self.grid
 
     def selectively_observe(self, indices: list = None) -> np.ndarray:
