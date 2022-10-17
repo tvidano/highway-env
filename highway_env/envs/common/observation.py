@@ -681,8 +681,7 @@ class LidarObservation(ObservationType):
 
     def index_to_direction(self, index: int) -> np.ndarray:
         """Get the unit vector pointing toward the center of the cell."""
-        return np.array([[np.cos(index * self.angle)],
-                         [np.sin(index * self.angle)]])
+        return np.array([np.cos(index * self.angle), np.sin(index * self.angle)])
 
 
 class AdaptiveLidarObservation(LidarObservation):

@@ -141,12 +141,12 @@ agent = agent_factory(env, agent_config)
 
 # env.start_video_recorder()
 action_dict = env.action_type.ACTIONS_ALL
-done = False
+terminated, truncated = False, False
 obs = env.reset()
 lidar_count = 0
-while not done:
+while not truncated and not terminated:
     action = agent.act(obs)
-    obs, reward, done, info = env.step(action)
+    obs, reward, terminated, truncated, info = env.step(action)
     #print(f"last Observation: {obs}")
     closest_car = env.find_closest_obstacle()
     print(f"{env.lidar_count - lidar_count} new lidar points")
@@ -160,7 +160,7 @@ while not done:
 env.close()
 # env.close_video_recorder()
 
-# ###############################################################################
+################################################################################
 # # Create experiment log file:
 # log_dir = op.join(local_highway_env, "scripts","experiment_4")
 # os.makedirs(log_dir, exist_ok=True)

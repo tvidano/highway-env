@@ -333,10 +333,11 @@ class HighwayEnvLidar(HighwayEnv):
 
         obs = self.lidar_buffer
         reward = self._reward(action)
-        terminal = self._is_terminal()
+        terminated = self._is_terminated()
+        truncated = self._is_truncated()
         info = self._info(obs, action)
 
-        return obs, reward, terminal, info
+        return obs, reward, terminated, truncated, info
 
     def _simulate(self, action: Optional[Action] = None) -> None:
         """Perform several steps of simulation with constant action."""
@@ -417,24 +418,21 @@ class HighwayEnvLidar(HighwayEnv):
         actions = [self.action_type.actions_indexes['IDLE']]
         for l_index in self.road.network.side_lanes(self.vehicle.lane_index):
             if l_index[2] < self.vehicle.lane_index[2] \
-                    and self.road.network.get_lane(l_index).is_reachable_from(self.vehicle.position) \
+                    and self.road.network.get_lane(l_index).is_reachable_from(
+                self.vehicle.position) \
                     and self.action_type.lateral:
                 actions.append(self.action_type.actions_indexes['LANE_LEFT'])
             if l_index[2] > self.vehicle.lane_index[2] \
-                    and self.road.network.get_lane(l_index).is_reachable_from(self.vehicle.position) \
+                    and self.road.network.get_lane(l_index).is_reachable_from(
+                self.vehicle.position) \
                     and self.action_type.lateral:
                 actions.append(self.action_type.actions_indexes['LANE_RIGHT'])
-        if self.vehicle.speed_index < self.vehicle.SPEED_COUNT - 1 and self.action_type.longitudinal:
+        if self.vehicle.speed_index < self.vehicle.SPEED_COUNT - 1 and \
+                self.action_type.longitudinal:
             actions.append(self.action_type.actions_indexes['FASTER'])
         if self.action_type.longitudinal:
             actions.append(self.action_type.actions_indexes['SLOWER'])
         return actions
-
-    def _is_terminal(self) -> bool:
-        """The episode is over if the ego vehicle crashed or the time is out."""
-        return self.vehicle.crashed or \
-            self.current_time >= self.config["duration"] or \
-            (self.config["offroad_terminal"] and not self.vehicle.on_road)
 
 
 class HighwayEnvFast(HighwayEnv):
@@ -594,7 +592,8 @@ class HighwayEnvLidar(HighwayEnv):
         # 5. return that distance.
         return closest_distance
 
-    def step(self, action: Action) -> Tuple[Observation, float, bool, dict]:
+    def step(self, action: Action) -> \
+            Tuple[Observation, float, bool, bool, dict]:
         """
         Perform an action and step the environment dynamics.
 
@@ -631,13 +630,21 @@ class HighwayEnvLidar(HighwayEnv):
 
         obs = self.lidar_buffer
         reward = self._reward(action)
-        terminal = self._is_terminal()
+        terminated = self._is_terminated()
+        truncated = self._is_truncated()
         info = self._info(obs, action)
 
-        return obs, reward, terminal, info
+        return obs, reward, terminated, truncated, info
 
     def _simulate(self, action: Optional[Action] = None) -> None:
         """Perform several steps of simulation with constant action."""
+        # TODO: Review method of synchronizing ego agent actions and simulation.
+        # method 1: enforce (1) simulation >= policy_frequency, (2)
+        # policy_frequency is some integer multiple of simulation_frequency.
+        # method 2: use self.time to coordinate simulation steps and policy
+        # steps. We must keep track of the number of policy steps taken and then
+        # check at each simulation time step if the current time is past
+        # self.step / f_policy. If it is we then apply an action.
         frames = int(self.config["simulation_frequency"]
                      // self.config["policy_frequency"])
         for frame in range(frames):
@@ -649,7 +656,8 @@ class HighwayEnvLidar(HighwayEnv):
 
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
-            self.time += 1  # [in simulation steps, not action steps]
+            # self.time += 1  # [in simulation steps, not action steps]
+            self.time += 1 / self.config["simulation_frequency"]
 
             # Automatically render intermediate simulation steps if a viewer
             # has been launched. Ignored if the rendering is done offscreen
@@ -715,24 +723,21 @@ class HighwayEnvLidar(HighwayEnv):
         actions = [self.action_type.actions_indexes['IDLE']]
         for l_index in self.road.network.side_lanes(self.vehicle.lane_index):
             if l_index[2] < self.vehicle.lane_index[2] \
-                    and self.road.network.get_lane(l_index).is_reachable_from(self.vehicle.position) \
+                    and self.road.network.get_lane(l_index).is_reachable_from(
+                self.vehicle.position) \
                     and self.action_type.lateral:
                 actions.append(self.action_type.actions_indexes['LANE_LEFT'])
             if l_index[2] > self.vehicle.lane_index[2] \
-                    and self.road.network.get_lane(l_index).is_reachable_from(self.vehicle.position) \
+                    and self.road.network.get_lane(l_index).is_reachable_from(
+                self.vehicle.position) \
                     and self.action_type.lateral:
                 actions.append(self.action_type.actions_indexes['LANE_RIGHT'])
-        if self.vehicle.speed_index < self.vehicle.SPEED_COUNT - 1 and self.action_type.longitudinal:
+        if self.vehicle.speed_index < self.vehicle.SPEED_COUNT - 1 and \
+                self.action_type.longitudinal:
             actions.append(self.action_type.actions_indexes['FASTER'])
         if self.action_type.longitudinal:
             actions.append(self.action_type.actions_indexes['SLOWER'])
         return actions
-
-    def _is_terminal(self) -> bool:
-        """The episode is over if the ego vehicle crashed or the time is out."""
-        return self.vehicle.crashed or \
-            self.current_time >= self.config["duration"] or \
-            (self.config["offroad_terminal"] and not self.vehicle.on_road)
 
 
 register(

@@ -211,7 +211,8 @@ def are_polygons_intersecting(a: Vector, b: Vector,
                 break
             if abs(distance) < min_distance:
                 min_distance = abs(distance)
-                d = a[:-1].mean(axis=0) - b[:-1].mean(axis=0)  # center difference
+                # center difference
+                d = a[:-1].mean(axis=0) - b[:-1].mean(axis=0)
                 translation_axis = normal if d.dot(normal) > 0 else -normal
 
     if will_intersect:
@@ -233,7 +234,8 @@ def confidence_ellipsoid(data: Dict[str, np.ndarray], lambda_: float = 1e-5, del
     """
     phi = np.array(data["features"])
     y = np.array(data["outputs"])
-    g_n_lambda = 1/sigma * np.transpose(phi) @ phi + lambda_ * np.identity(phi.shape[-1])
+    g_n_lambda = 1/sigma * \
+        np.transpose(phi) @ phi + lambda_ * np.identity(phi.shape[-1])
     theta_n_lambda = np.linalg.inv(g_n_lambda) @ np.transpose(phi) @ y / sigma
     d = theta_n_lambda.shape[0]
     beta_n = np.sqrt(2*np.log(np.sqrt(np.linalg.det(g_n_lambda) / lambda_ ** d) / delta)) + \
@@ -250,17 +252,22 @@ def confidence_polytope(data: dict, parameter_box: np.ndarray) -> Tuple[np.ndarr
     :return: estimated theta, polytope vertices, Gramian matrix G_N_lambda, radius beta_N
     """
     param_bound = np.amax(np.abs(parameter_box))
-    theta_n_lambda, g_n_lambda, beta_n = confidence_ellipsoid(data, param_bound=param_bound)
+    theta_n_lambda, g_n_lambda, beta_n = confidence_ellipsoid(
+        data, param_bound=param_bound)
 
     values, pp = np.linalg.eig(g_n_lambda)
-    radius_matrix = np.sqrt(beta_n) * np.linalg.inv(pp) @ np.diag(np.sqrt(1 / values))
-    h = np.array(list(itertools.product([-1, 1], repeat=theta_n_lambda.shape[0])))
+    radius_matrix = np.sqrt(
+        beta_n) * np.linalg.inv(pp) @ np.diag(np.sqrt(1 / values))
+    h = np.array(list(itertools.product(
+        [-1, 1], repeat=theta_n_lambda.shape[0])))
     d_theta = np.array([radius_matrix @ h_k for h_k in h])
 
     # Clip the parameter and confidence region within the prior parameter box.
-    theta_n_lambda = np.clip(theta_n_lambda, parameter_box[0], parameter_box[1])
+    theta_n_lambda = np.clip(
+        theta_n_lambda, parameter_box[0], parameter_box[1])
     for k, _ in enumerate(d_theta):
-        d_theta[k] = np.clip(d_theta[k], parameter_box[0] - theta_n_lambda, parameter_box[1] - theta_n_lambda)
+        d_theta[k] = np.clip(d_theta[k], parameter_box[0] -
+                             theta_n_lambda, parameter_box[1] - theta_n_lambda)
     return theta_n_lambda, d_theta, g_n_lambda, beta_n
 
 
@@ -299,7 +306,8 @@ def is_consistent_dataset(data: dict, parameter_box: np.ndarray = None) -> bool:
     y, phi = train_set["outputs"].pop(-1), train_set["features"].pop(-1)
     y, phi = np.array(y)[..., np.newaxis], np.array(phi)[..., np.newaxis]
     if train_set["outputs"] and train_set["features"]:
-        theta, _, gramian, beta = confidence_polytope(train_set, parameter_box=parameter_box)
+        theta, _, gramian, beta = confidence_polytope(
+            train_set, parameter_box=parameter_box)
         return is_valid_observation(y, phi, theta, gramian, beta)
     else:
         return True
