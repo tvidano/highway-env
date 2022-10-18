@@ -702,6 +702,11 @@ class AdaptiveLidarObservation(LidarObservation):
         super().__init__(env, **kwargs)
         self.normalize = normalize
 
+    def space(self) -> spaces.Space:
+        high = 10_000
+        return spaces.Box(shape=(self.cells, 4), low=-high,
+                          high=high, dtype=np.float32)
+
     def trace(self, origin: np.ndarray, origin_velocity: np.ndarray) -> np.ndarray:
         self.origin = origin.copy()
         self.grid = np.hstack([np.ones((self.cells, 3)) * np.inf,
@@ -748,11 +753,12 @@ class AdaptiveLidarObservation(LidarObservation):
                 direction = self.index_to_direction(index)
                 ray = [origin, origin + self.maximum_range * direction]
                 distance = utils.distance_to_rect(ray, corners)
+                position = origin + distance * direction
                 if distance <= self.grid[index, self.DISTANCE]:
                     velocity = (obstacle.velocity -
                                 origin_velocity).dot(direction)
-                    self.grid[index, :] = [distance, obstacle.position[0],
-                                           obstacle.position[1], velocity]
+                    self.grid[index, :] = [distance, position[0],
+                                           position[1], velocity]
         return self.grid
 
     def selectively_observe(self, indices: list = None) -> np.ndarray:
