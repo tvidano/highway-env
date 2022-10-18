@@ -5,8 +5,11 @@ applied to autonomous vehicles.
 
 # Environment
 from rl_agents.agents.common.factory import agent_factory
+from rl_agents.trainer.evaluation import Evaluation
+
 from logging import log
-import gym  # 0.21.0
+import logging
+import gym  # 0.26.2
 from gym.wrappers import RecordVideo, RecordEpisodeStatistics
 import os
 import os.path as op
@@ -122,6 +125,8 @@ import highway_env  # noqa
 
 ###############################################################################
 # Run a single episode:
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 env = gym.make("highway-lidar-v0")
 # env = RecordVideo(env, "videos")
 env.configure({
@@ -133,7 +138,7 @@ env.configure({
 agent_config = {
     "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
     "env_preprocessors": [{"method": "simplify"}],
-    "display_tree": True,
+    "display_tree": False,
     "budget": 100,
     "gamma": 0.9,
 }
@@ -142,7 +147,7 @@ agent = agent_factory(env, agent_config)
 # env.start_video_recorder()
 action_dict = env.action_type.ACTIONS_ALL
 terminated, truncated = False, False
-obs = env.reset()
+obs = env.reset(seed=111_111)
 lidar_count = 0
 while not truncated and not terminated:
     action = agent.act(obs)
@@ -154,8 +159,11 @@ while not truncated and not terminated:
     print(f"Closest: \t {closest_car:.2f} m away.")
     print(f"action: \t {action_dict[action]}")
     print(f"reward: \t {reward:.2f}")
+    print(f'\t \t {env.get_reward_breakdown(action)}')
     print(f"crashed: \t{env.vehicle.crashed}")
-    print(f"time: \t{env.current_time}")
+    # Index is clockwise.
+    print(f"lidar: \t {env.lidar_buffer[:,0]}")
+    print(f"time: \t{env.time}")
     env.render()
 env.close()
 # env.close_video_recorder()

@@ -742,6 +742,7 @@ class AdaptiveLidarObservation(LidarObservation):
             min_angle, max_angle = min(angles), max(angles)
             start, end = self.angle_to_index(
                 min_angle), self.angle_to_index(max_angle)
+            # TODO: there is a bug here somewhere.
             if start < end:
                 indexes = np.arange(start, end+1)
             else:
