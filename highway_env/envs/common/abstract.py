@@ -45,6 +45,10 @@ class AbstractEnv(gym.Env):
         self.config = self.default_config()
         self.configure(config)
 
+        # Seeding
+        self.np_random = None
+        self.seed()
+
         # Scene
         self.road = None
         self.controlled_vehicles = []
@@ -69,6 +73,10 @@ class AbstractEnv(gym.Env):
 
         print("this is a local version of highway-env")
         self.reset()
+
+    def seed(self, seed: int = None) -> List[int]:
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
 
     @property
     def vehicle(self) -> Vehicle:
@@ -194,6 +202,7 @@ class AbstractEnv(gym.Env):
 
         :return: the observation of the reset state
         """
+        super().reset(seed=seed)
         self.update_metadata()
         # First, to set the controlled vehicle class depending on action space
         self.define_spaces()
