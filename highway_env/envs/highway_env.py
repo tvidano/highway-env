@@ -180,6 +180,9 @@ class HighwayEnvLidar(HighwayEnv):
         #    2: position_y
         #    3: relative velocity
         self.lidar_count = 0
+        self.obs_step = 0
+
+        self.indexes_to_update = []
 
     @classmethod
     def default_config(cls) -> dict:
@@ -210,7 +213,7 @@ class HighwayEnvLidar(HighwayEnv):
                                         # obstacle_distance_reward becomes
                                         # non-zero (3 car lengths).
             "adaptive_observations": True,
-            "base_lidar_frequency": 1,  # [Hz], <= policy_frequency
+            "base_lidar_frequency": 0.5,  # [Hz], <= policy_frequency
             "constant_base_lidar": False,  # uses base lidar frequency without
                                         # adaptive sampling.
             "reaction_distance": 15,    # [m] distance at which higher sampling
@@ -223,7 +226,9 @@ class HighwayEnvLidar(HighwayEnv):
     def _reset(self) -> None:
         super()._reset()
         self.lidar_count = 0
-        self.lidar_buffer = np.ones(self.observation_space.shape) * np.inf
+        self.lidar_buffer = self.observation_type.observe()
+        self.obs_step = 0
+        self.indexes_to_update = []
 
     def _reward(self, action: Action) -> float:
         """
@@ -233,32 +238,32 @@ class HighwayEnvLidar(HighwayEnv):
         :param action: the last action performed
         :return: the corresponding reward
         """
-        
+
         # Normalize the total reward.
         rewards = self._rewards(action)
         reward = sum(rewards.values())
         min_reward = self.config["obstacle_distance_reward"] \
-                                - self.config["smooth_driving_reward"]
+            - self.config["smooth_driving_reward"]
         max_reward = self.config["high_speed_reward"] \
-                                + self.config["right_lane_reward"] \
-                                + self.config["smooth_driving_reward"]
+            + self.config["right_lane_reward"] \
+            + self.config["smooth_driving_reward"]
         reward = utils.lmap(reward, [min_reward, max_reward], [0, 1])
         return reward
 
     def _rewards(self, action: Action) -> dict:
         """Reward function is based solely on LiDAR points."""
         # Define distance reward function.
-        dist_reward_func = lambda dist: \
+        def dist_reward_func(dist): return \
             2 * self.config["obstacle_distance_reward"] / np.pi * np.arctan(
                 0.5 * -dist) + self.config["obstacle_distance_reward"]
         collision_dist = self.controlled_vehicles[0].LENGTH
         dist_to_obstacle = max(self.find_closest_obstacle(), 0) \
             - collision_dist
         distance_reward = dist_reward_func(dist_to_obstacle)
-        distance_reward = max(distance_reward, 
+        distance_reward = max(distance_reward,
                               self.config["obstacle_distance_reward"])
-        
-        # Reward for choosing IDLE, punish if changing lanes. 
+
+        # Reward for choosing IDLE, punish if changing lanes.
         actions = self.action_type.actions_indexes
         if action == actions["IDLE"]:
             smooth_reward = self.config["smooth_driving_reward"]
@@ -280,7 +285,7 @@ class HighwayEnvLidar(HighwayEnv):
             else self.vehicle.lane_index[2]
         right_lane_reward = self.config["right_lane_reward"] * \
             lane / max(len(neighbours) - 1, 1)
-        
+
         return {
             "distance": distance_reward, "right_lane": right_lane_reward,
             "high speed": high_speed_reward, "smooth": smooth_reward}
@@ -307,10 +312,10 @@ class HighwayEnvLidar(HighwayEnv):
         # 3. find the closest lidar point.
         # 4. get the distance to that point.
         lidar_points = self.lidar_buffer[:, [x_position, y_position]]
-        distances = np.linalg.norm(lidar_points- ego_position, axis=1)
+        distances = np.linalg.norm(lidar_points - ego_position, axis=1)
         points_in_buffer = np.logical_and(
-            lidar_points[:,1] - lane_buffer < ego_position[1],
-            ego_position[1] < lidar_points[:,1] + lane_buffer)
+            lidar_points[:, 1] - lane_buffer < ego_position[1],
+            ego_position[1] < lidar_points[:, 1] + lane_buffer)
         try:
             closest_distance = np.min(distances[points_in_buffer])
         except ValueError:
@@ -344,23 +349,9 @@ class HighwayEnvLidar(HighwayEnv):
                 initialized in the environment implementation")
 
         self.steps += 1
+        if action is not None and not self.config["manual_control"]:
+            self.action_type.act(action)
         self._simulate(action)
-
-        if self.config["adaptive_observations"] and \
-                not self.config["constant_base_lidar"] and \
-                self.time % int(self.config["simulation_frequency"]
-                                // self.config["base_lidar_frequency"]) == 0:
-            self._observe()
-        # the fastest observation frequency is the policy frequency
-        elif self.config["adaptive_observations"] and \
-                not self.config["constant_base_lidar"]:
-            self._adaptively_observe()
-        elif self.config["constant_base_lidar"] and \
-                self.time % int(self.config["simulation_frequency"]
-                                // self.config["base_lidar_frequency"]) == 0:
-            self._observe()
-        elif not self.config["constant_base_lidar"]:
-            self._observe()
 
         obs = self.lidar_buffer
         reward = self._reward(action)
@@ -369,7 +360,7 @@ class HighwayEnvLidar(HighwayEnv):
         info = self._info(obs, action)
 
         return obs, reward, terminated, truncated, info
-    
+
     def _info(self, obs: Observation, action: Optional[Action] = None) -> dict:
         """
         Return a dictionary of additional information
@@ -391,29 +382,31 @@ class HighwayEnvLidar(HighwayEnv):
 
     def _simulate(self, action: Optional[Action] = None) -> None:
         """Perform several steps of simulation with constant action."""
-        # TODO: Review method of synchronizing ego agent actions and simulation.
-        # method 1: enforce (1) simulation >= policy_frequency, (2)
-        # policy_frequency is some integer multiple of simulation_frequency.
-        # method 2: use self.time to coordinate simulation steps and policy
-        # steps. We must keep track of the number of policy steps taken and then
-        # check at each simulation time step if the current time is past
-        # self.step / f_policy. If it is we then apply an action.
         assert self.config["simulation_frequency"] >= \
             self.config["policy_frequency"]
+        assert self.config["simulation_frequency"] >= \
+            self.config["base_lidar_frequency"]
+        assert self.config["adaptive_observations"] != \
+            self.config["constant_base_lidar"], \
+            "Adaptive observations cannot be used when using a constant "\
+            "base lidar frequency."
         frames = int(self.config["simulation_frequency"]
                      // self.config["policy_frequency"])
         for frame in range(frames):
-            # Forward action to the vehicle
-            if action is not None \
-                    and not self.config["manual_control"] \
-                    and self.time % frames == 0:
-                self.action_type.act(action)
-                logging.debug(f"Taking action: {action}")
-
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
             # self.time += 1  # [in simulation steps, not action steps]
             self.time += 1 / self.config["simulation_frequency"]
+
+            # Implement observation logic for adaptive frequency. The base lidar
+            # frequency is set by a config parameter. The highest lidar
+            # frequency is set by the policy frequency.
+            if self.time >= self.obs_step / self.config["base_lidar_frequency"]:
+                self._observe()
+                self.obs_step += 1
+            elif self.config["adaptive_observations"] and \
+                    self.time >= self.steps / self.config["policy_frequency"]:
+                self._adaptively_observe()
 
             # Automatically render intermediate simulation steps if a viewer
             # has been launched. Ignored if the rendering is done offscreen
@@ -432,6 +425,7 @@ class HighwayEnvLidar(HighwayEnv):
         self.lidar_buffer = self.observation_type.observe()
         # 4. Increase self.lidar_count.
         self.lidar_count += self.observation_type.cells
+        self.indexes_to_update = list(range(0, self.observation_type.cells))
 
     def _get_center_distances_from_buffer(self) -> np.ndarray:
         """
@@ -442,7 +436,7 @@ class HighwayEnvLidar(HighwayEnv):
         x_position = self.observation_type.POSITION_X
         y_position = self.observation_type.POSITION_Y
         center_distances = np.linalg.norm(
-            self.lidar_buffer[:,[x_position, y_position]] \
+            self.lidar_buffer[:, [x_position, y_position]]
             - self.controlled_vehicles[0].position, axis=1)
         return center_distances
 
@@ -458,20 +452,17 @@ class HighwayEnvLidar(HighwayEnv):
         distance_logic = (center_distances < self.config["reaction_distance"])
         velocity_logic = (abs(self.lidar_buffer[:, self.observation_type.VELOCITY])
                           > self.config["reaction_velocity"])
-        indexes_to_update = np.where(distance_logic
-                                     + velocity_logic)[0].tolist()
-        if len(indexes_to_update) != 0:
-            logger.debug(
-                f"Updating {indexes_to_update} according to adaptive sensor strategy.")
+        self.indexes_to_update = np.where(distance_logic
+                                          + velocity_logic)[0].tolist()
         # 2. Call AdaptiveLidarObservation.selectively_observe(indices) where
         # indices are the specific indices that need to be updated.
         updated_indexes = self.observation_type.selectively_observe(
-            indexes_to_update)
+            self.indexes_to_update)
         # 3. Update self.lidar_buffer with the new indices, without overwriting
         # indices that didn't need to be updated.
-        self.lidar_buffer[indexes_to_update, :] = updated_indexes
+        self.lidar_buffer[self.indexes_to_update, :] = updated_indexes
         # 4. Increase self.lidar_count with the number of indices.
-        self.lidar_count += len(indexes_to_update)
+        self.lidar_count += len(self.indexes_to_update)
 
     def get_available_actions(self) -> List[int]:
         """
@@ -484,7 +475,7 @@ class HighwayEnvLidar(HighwayEnv):
         """
         if not isinstance(self.action_type, DiscreteMetaAction):
             raise ValueError("Only discrete meta-actions can be unavailable.")
-        
+
         ego_vehicle = self.controlled_vehicles[0]
         # Idling is always available.
         actions = [self.action_type.actions_indexes['IDLE']]

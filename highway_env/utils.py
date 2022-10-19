@@ -362,8 +362,14 @@ def distance_to_rect(line: Tuple[np.ndarray, np.ndarray], rect: List[np.ndarray]
     u, v = u/np.linalg.norm(u), v/np.linalg.norm(v)
     rqu = (q - r) @ u
     rqv = (q - r) @ v
-    interval_1 = [(a - r) @ u / rqu, (b - r) @ u / rqu]
-    interval_2 = [(a - r) @ v / rqv, (d - r) @ v / rqv]
+    if rqu == 0:
+        interval_1 = [np.inf, np.inf]
+    else:
+        interval_1 = [(a - r) @ u / rqu, (b - r) @ u / rqu]
+    if rqv == 0:
+        interval_2 = [np.inf, np.inf]
+    else:
+        interval_2 = [(a - r) @ v / rqv, (d - r) @ v / rqv]
     interval_1 = interval_1 if rqu >= 0 else list(reversed(interval_1))
     interval_2 = interval_2 if rqv >= 0 else list(reversed(interval_2))
     if interval_distance(*interval_1, *interval_2) <= 0 \
