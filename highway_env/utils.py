@@ -350,32 +350,59 @@ def distance_to_rect(line: Tuple[np.ndarray, np.ndarray], rect: List[np.ndarray]
     """
     Compute the intersection between a line segment and a rectangle.
 
+    A         Q  B
+    +--------/---+
+    |       /    |
+    +------/-----+
+    D     /      C
+         R
+
+    Uses the following identities:
+    - A point P will be inside rectangle ABCD if:
+        - 0 <= AP @ u <= norm(AB)    (interval_1)
+        - 0 <= AP @ v <= norm(AD)    (interval_2)
+    - AP = AR - lambda * RQ for 0 <= lambda <=1
+    - norm(AB) - AR @ u = RB @ u and norm(AD) - AR @ v = RD @ v
+
     See https://math.stackexchange.com/a/2788041.
-    :param line: a line segment [R, Q]
-    :param rect: a rectangle [A, B, C, D]
+    :param line: a line segment defined by start and end locations [R, Q]
+    :param rect: rectangle vertex locations [A, B, C, D]
     :return: the distance between R and the intersection of the segment RQ with the rectangle ABCD
     """
+    # Get locations of line segment end points and rectangle vertices.
     r, q = line
+    assert np.linalg.norm(q - r) > 0., "line must define a line segment."
     a, b, c, d = rect
-    u = b - a
-    v = d - a
-    u, v = u/np.linalg.norm(u), v/np.linalg.norm(v)
-    rqu = (q - r) @ u
-    rqv = (q - r) @ v
-    if rqu == 0:
-        interval_1 = [np.inf, np.inf]
+    # Compute orthogonal unit vectors at corner ABD.
+    u, v = (b - a)/np.linalg.norm((b - a)), (d - a)/np.linalg.norm((d - a))
+    # Compute commonly used projections.
+    rq_proj_u = (q - r) @ u
+    rq_proj_v = (q - r) @ v
+    assert not (rq_proj_u == 0. and rq_proj_v == 0.), \
+        "Geometry constraint violated."
+    # Define intervals that bound lambda.
+    if rq_proj_u == 0.:
+        interval_1 = [(a - r) @ u, (b - a) @ u]
     else:
-        interval_1 = [(a - r) @ u / rqu, (b - r) @ u / rqu]
-    if rqv == 0:
-        interval_2 = [np.inf, np.inf]
+        interval_1 = [(a - r) @ u / rq_proj_u, (b - r) @ u / rq_proj_u]
+    if rq_proj_v == 0.:
+        interval_2 = [(a - r) @ v, (d - r) @ v]
     else:
-        interval_2 = [(a - r) @ v / rqv, (d - r) @ v / rqv]
-    interval_1 = interval_1 if rqu >= 0 else list(reversed(interval_1))
-    interval_2 = interval_2 if rqv >= 0 else list(reversed(interval_2))
+        interval_2 = [(a - r) @ v / rq_proj_v, (d - r) @ v / rq_proj_v]
+    # If RQ is pointing down instead of up flip interval.
+    interval_1 = interval_1 if rq_proj_u >= 0 else list(reversed(interval_1))
+    interval_2 = interval_2 if rq_proj_v >= 0 else list(reversed(interval_2))
+    # If interval_1, interval_2, and [0, 1] have a common intersection, then
+    # RQ passes through rectangle ABCD. Check that these three intervals
+    # intersect.
     if interval_distance(*interval_1, *interval_2) <= 0 \
             and interval_distance(0, 1, *interval_1) <= 0 \
             and interval_distance(0, 1, *interval_2) <= 0:
-        return max(interval_1[0], interval_2[0]) * np.linalg.norm(q - r)
+        # The intervals lowest admissible value of lamdba provides the ratio of
+        # RQ required to reach the closest edge of rectangle ABCD from point R.
+        min_lambda = max(interval_1[0], interval_2[0], 0.)
+        assert 0. <= min_lambda <= 1., "Lambda constraint violated."
+        return min_lambda * np.linalg.norm(q - r)
     else:
         return np.inf
 
