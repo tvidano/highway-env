@@ -708,7 +708,7 @@ class AdaptiveLidarObservation(LidarObservation):
     def space(self) -> spaces.Space:
         high = 10_000
         return spaces.Box(shape=(self.cells, 4), low=-high,
-                          high=high, dtype=np.float32)
+                          high=high, dtype=np.float64)
 
     def trace(self, origin: np.ndarray, origin_velocity: np.ndarray) -> np.ndarray:
         self.origin = origin.copy()
@@ -719,7 +719,9 @@ class AdaptiveLidarObservation(LidarObservation):
             # Filter out ego-vehicle, and those outside of max range.
             if obstacle is self.observer_vehicle or not obstacle.solid:
                 continue
-            center_distance = np.linalg.norm(obstacle.position - origin)
+            corners = utils.rect_corners(obstacle.position, obstacle.LENGTH,
+                                         obstacle.WIDTH, obstacle.heading)
+            center_distance = min(np.linalg.norm(corners - origin, axis=1))
             if center_distance > self.maximum_range:
                 continue
             # Get the index of the lidar data that corresponds to that obstacle
@@ -738,8 +740,6 @@ class AdaptiveLidarObservation(LidarObservation):
                                               velocity]
 
             # Get all grid indices covered by the obstacle.
-            corners = utils.rect_corners(
-                obstacle.position, obstacle.LENGTH, obstacle.WIDTH, obstacle.heading)
             angles = [self.position_to_angle(
                 corner, origin) for corner in corners]
             min_angle, max_angle = min(angles), max(angles)
