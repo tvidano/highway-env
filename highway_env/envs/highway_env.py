@@ -1,7 +1,6 @@
 from typing import Dict, Text
 
 import numpy as np
-import logging
 from typing import List, Tuple, Optional, Callable
 from gym.envs.registration import register
 
@@ -14,8 +13,6 @@ from highway_env.vehicle.controller import ControlledVehicle
 from highway_env.vehicle.kinematics import Vehicle
 
 Observation = np.ndarray
-
-logger = logging.getLogger(__name__)
 
 
 class HighwayEnv(AbstractEnv):
@@ -36,9 +33,12 @@ class HighwayEnv(AbstractEnv):
             "action": {
                 "type": "DiscreteMetaAction",
             },
+            "initial_ego_speed": 25,
             "lanes_count": 4,
             "vehicles_count": 50,
             "controlled_vehicles": 1,
+            "vehicle_speeds": np.linspace(20, 30, 3),  # The available target
+                                                       # speeds for MDPVehicles.
             "initial_lane_id": None,
             "duration": 40,  # [s]
             "ego_spacing": 2,
@@ -80,18 +80,31 @@ class HighwayEnv(AbstractEnv):
         for others in other_per_controlled:
             vehicle = Vehicle.create_random(
                 self.road,
-                speed=25,
+                speed=self.config["initial_ego_speed"],
                 lane_id=self.config["initial_lane_id"],
                 spacing=self.config["ego_spacing"]
             )
             vehicle = self.action_type.vehicle_class(
                 self.road, vehicle.position, vehicle.heading, vehicle.speed)
+            vehicle.target_speeds = self.config["vehicle_speeds"]
             self.controlled_vehicles.append(vehicle)
             self.road.vehicles.append(vehicle)
 
-            for _ in range(others):
+            num_front = others // 2
+            num_rear = others - num_front
+            # Add vehicles in front of the most forward vehicle.
+            for _ in range(num_front):
                 vehicle = other_vehicles_type.create_random(
                     self.road, spacing=1 / self.config["vehicles_density"])
+                vehicle.target_speeds = self.config["vehicle_speeds"]
+                vehicle.randomize_behavior()
+                self.road.vehicles.append(vehicle)
+            # Add vehicles behind the most rearward vehicle.
+            for _ in range(num_rear):
+                vehicle = other_vehicles_type.create_random(
+                    self.road, spacing=1 / self.config["vehicles_density"],
+                    add_backwards=True)
+                vehicle.target_speeds = self.config["vehicle_speeds"]
                 vehicle.randomize_behavior()
                 self.road.vehicles.append(vehicle)
 
@@ -191,44 +204,132 @@ class HighwayEnvLidar(HighwayEnv):
             "observation": {
                 "type": "AdaptiveLidarObservation"
             },
-            "simulation_frequency": 4,  # [Hz]
+            "vehicle_type_distribution": {
+                "sedan": 0.4,
+                "truck": 0.5,
+                "semi": 0.1,
+            },
+            # Simulation related configurations.
+            "simulation_frequency": 10,  # [Hz]
             "policy_frequency": 1,  # [Hz]
             "duration": 30 * 1,  # [max steps per episode]
-            "vehicles_density": 2.0,
-            "show_trajectories": False,
-            "obstacle_distance_reward": -10,    # reward for distance between
-                                                # ego-vehicle and closest lidar
-                                                # point directly in front or
-                                                # behind ego-vehicle.
-            "right_lane_reward": 0.0,   # The reward received when driving on
-                                        # the right-most lanes, linearly mapped
-                                        # to zero for other lanes.
-            "high_speed_reward": 0.0,  # The reward received when driving at
-                                        # full speed, linearly mapped to zero
-                                        # for lower speeds according to
-                                        # config["reward_speed_range"].
-            "smooth_driving_reward": 1.0,   # The reward received when IDLE is
-                                            # chosen.
-            "distance_threshold": 15,   # [m] distance at which
-                                        # obstacle_distance_reward becomes
-                                        # non-zero (3 car lengths).
-            "adaptive_observations": True,
             "base_lidar_frequency": 0.5,  # [Hz], <= policy_frequency
+            # Scenario related configurations.
+            "vehicles_count": 14,
+            "lanes_count": 2,
+            "initial_ego_speed": 30,
+            "road_speed_limit": 33,
+            "vehicle_speeds": np.linspace(10, 35, 5),
+            "vehicles_density": 2.0,
+            "adaptive_observations": True,
             "constant_base_lidar": False,  # uses base lidar frequency without
-                                        # adaptive sampling.
+                                           # adaptive sampling.
+            # Observations related configurations.
             "reaction_distance": 15,    # [m] distance at which higher sampling
                                         # rates are used for lidar indices.
             "reaction_velocity": 7.5,   # [m/s] velocity at which higher
                                         # rates are used for lidar indices.
+            # Rewards related configuraions.
+            "obstacle_distance_reward": -10,    # reward for distance between
+                                                # ego-vehicle and closest lidar
+                                                # point directly in front or
+                                                # behind ego-vehicle.
+            "distance_threshold": 15,   # [m] distance at which
+                                        # obstacle_distance_reward becomes
+                                        # non-zero (~3 car lengths).
+            "right_lane_reward": 1.0,   # The reward received when driving on
+                                        # the right-most lanes, linearly mapped
+                                        # to zero for other lanes.
+            "high_speed_reward": 1.0,  # The reward received when driving at
+                                        # full speed, linearly mapped to zero
+                                        # for lower speeds according to
+                                        # config["reward_speed_range"].
+            "reward_speed_range": [20, 40],
+            "smooth_driving_reward": 1.0,   # The reward received when IDLE is
+                                            # chosen.
         })
         return cfg
 
     def _reset(self) -> None:
         super()._reset()
+        self._distribute_vehicle_types()
         self.lidar_count = 0
         self.lidar_buffer = self.observation_type.observe()
         self.obs_step = 0
         self.indexes_to_update = []
+
+    def _create_road(self) -> None:
+        """Create a road composed of straight adjacent lanes."""
+        self.road = Road(
+            network=RoadNetwork.straight_road_network(
+                self.config["lanes_count"],
+                speed_limit=self.config["road_speed_limit"]),
+            np_random=self.np_random,
+            record_history=self.config["show_trajectories"])
+
+    def _distribute_vehicle_types(self):
+        """
+        Change vehicles distributed throughout the highway according to the
+        config parameter vehicle type distribution.
+        """
+        vehicle_types = self.config["vehicle_type_distribution"]
+        assert sum(vehicle_types.values()) == 1.0, \
+            "the distribution of vehicle types must total 1.0."
+        vehicles = self.road.vehicles[1:]
+        f150_width, f150_length = 2.2, 6.0
+        big_rig_width, big_rig_length = 2.6, 18.0
+        vehicle_index = np.arange(len(vehicles))
+        self.np_random.shuffle(vehicle_index)
+        num_sedans = round(vehicle_types["sedan"] * len(vehicles))
+        num_trucks = round(vehicle_types["truck"] * len(vehicles))
+        truck_indices = vehicle_index[num_sedans:num_sedans + num_trucks]
+        semi_indices = vehicle_index[num_sedans + num_trucks:]
+        for i in truck_indices:
+            vehicles[i].LENGTH = f150_length
+            vehicles[i].WIDTH = f150_width
+            vehicles[i].diagonal = np.sqrt(f150_width**2 + f150_length**2)
+        # List semi_indices by vehicle location in decreasing x position.
+        sorted_semi_indices = sorted(
+            semi_indices, key=lambda i: vehicles[i].position[0], reverse=True)
+        # Create semi trucks by modifying existing vehicles.
+        for i in sorted_semi_indices:
+            # Change vehicle parameters and goals to model a semi truck.
+            vehicles[i].LENGTH = big_rig_length
+            vehicles[i].DISTANCE_WANTED = self.vehicle.LENGTH * \
+                2 + big_rig_length / 2
+            vehicles[i].WIDTH = big_rig_width
+            vehicles[i].diagonal = np.sqrt(
+                big_rig_length**2 + big_rig_width**2)
+            # Move semi trucks so they are 2 other car lengths away from other
+            # vehicles so not initialized in a collision.
+            front_vehicle, rear_vehicle = vehicles[i].road.neighbour_vehicles(
+                vehicles[i], vehicles[i].lane_index)
+            # If semi is initialized too close to the vehicle in front, move all
+            # vehicles in that lane behind the front vehicle back.
+            safe_distance = vehicles[i].LENGTH / 2. + self.vehicle.LENGTH * 2.5
+            if front_vehicle and \
+                    front_vehicle.position[0] - vehicles[i].position[0] <= \
+                    front_vehicle.LENGTH / 2. + vehicles[i].LENGTH / 2. + \
+                    self.vehicle.LENGTH * 2.:
+                self._shift_all_vehicles_behind(front_vehicle, safe_distance)
+
+            # If semi is initialized too close to the vehicle in rear, move all
+            # vehicles in that lane behind the semi back.
+            if rear_vehicle and \
+                    vehicles[i].position[0] - rear_vehicle.position[0] <= \
+                    vehicles[i].LENGTH / 2. + rear_vehicle.LENGTH / 2. + \
+                    self.vehicle.LENGTH * 2.:
+                self._shift_all_vehicles_behind(vehicles[i], safe_distance)
+
+    def _shift_all_vehicles_behind(self, vehicle, distance):
+        """Move all vehicles behind |vehicle| in the same lane back |distance|."""
+        _, rear_vehicle = vehicle.road.neighbour_vehicles(
+            vehicle, vehicle.lane_index)
+        if rear_vehicle:
+            # Move the vehicle behind rear_vehicle before moving rear_vehicle to
+            # prevent skipping any vehicles.
+            self._shift_all_vehicles_behind(rear_vehicle, distance)
+            rear_vehicle.position[0] -= distance
 
     def _reward(self, action: Action) -> float:
         """
@@ -256,7 +357,7 @@ class HighwayEnvLidar(HighwayEnv):
         def dist_reward_func(dist): return \
             2 * self.config["obstacle_distance_reward"] / np.pi * np.arctan(
                 0.5 * -dist) + self.config["obstacle_distance_reward"]
-        collision_dist = self.controlled_vehicles[0].LENGTH
+        collision_dist = self.vehicle.LENGTH
         dist_to_obstacle = max(self.find_closest_obstacle(), 0) \
             - collision_dist
         distance_reward = dist_reward_func(dist_to_obstacle)
@@ -307,7 +408,7 @@ class HighwayEnvLidar(HighwayEnv):
         x_position = self.observation_type.POSITION_X
         y_position = self.observation_type.POSITION_Y
         # 1. get the current ego-vehicle x, y location.
-        ego_position = self.controlled_vehicles[0].position
+        ego_position = self.vehicle.position
         # 2. isolate the lidar points in front and behind the ego vehicle.
         # 3. find the closest lidar point.
         # 4. get the distance to that point.
@@ -395,17 +496,19 @@ class HighwayEnvLidar(HighwayEnv):
         for frame in range(frames):
             self.road.act()
             self.road.step(1 / self.config["simulation_frequency"])
-            # self.time += 1  # [in simulation steps, not action steps]
             self.time += 1 / self.config["simulation_frequency"]
+            # Account for floating point errors in comparisons.
+            self.time = round(self.time, 10)
 
             # Implement observation logic for adaptive frequency. The base lidar
             # frequency is set by a config parameter. The highest lidar
             # frequency is set by the policy frequency.
-            if self.time >= self.obs_step / self.config["base_lidar_frequency"]:
+            if self.time >= round(
+                    self.obs_step / self.config["base_lidar_frequency"], 10):
                 self._observe()
                 self.obs_step += 1
-            elif self.config["adaptive_observations"] and \
-                    self.time >= self.steps / self.config["policy_frequency"]:
+            elif self.config["adaptive_observations"] and self.time >= round(
+                    self.steps / self.config["policy_frequency"], 10):
                 self._adaptively_observe()
 
             # Automatically render intermediate simulation steps if a viewer
@@ -437,7 +540,7 @@ class HighwayEnvLidar(HighwayEnv):
         y_position = self.observation_type.POSITION_Y
         center_distances = np.linalg.norm(
             self.lidar_buffer[:, [x_position, y_position]]
-            - self.controlled_vehicles[0].position, axis=1)
+            - self.vehicle.position, axis=1)
         return center_distances
 
     def _adaptively_observe(self) -> None:
@@ -463,42 +566,6 @@ class HighwayEnvLidar(HighwayEnv):
         self.lidar_buffer[self.indexes_to_update, :] = updated_indexes
         # 4. Increase self.lidar_count with the number of indices.
         self.lidar_count += len(self.indexes_to_update)
-
-    def get_available_actions(self) -> List[int]:
-        """
-        Get the list of currently available actions.
-
-        Lane changes are not available on the boundary of the road, and speed
-        changes are not available at maximal or minimal speed.
-
-        :return: the list of available actions
-        """
-        if not isinstance(self.action_type, DiscreteMetaAction):
-            raise ValueError("Only discrete meta-actions can be unavailable.")
-
-        ego_vehicle = self.controlled_vehicles[0]
-        # Idling is always available.
-        actions = [self.action_type.actions_indexes['IDLE']]
-        for l_index in self.road.network.side_lanes(ego_vehicle.lane_index):
-            if l_index[2] < ego_vehicle.lane_index[2] \
-                    and self.road.network.get_lane(l_index).is_reachable_from(
-                ego_vehicle.position) \
-                    and self.action_type.lateral:
-                actions.append(self.action_type.actions_indexes['LANE_LEFT'])
-            if l_index[2] > ego_vehicle.lane_index[2] \
-                    and self.road.network.get_lane(l_index).is_reachable_from(
-                ego_vehicle.position) \
-                    and self.action_type.lateral:
-                actions.append(self.action_type.actions_indexes['LANE_RIGHT'])
-        # Going faster is only allowed if lower than max speed and using
-        # longitudinal control.
-        if ego_vehicle.speed_index < len(ego_vehicle.target_speeds) and \
-                self.action_type.longitudinal:
-            actions.append(self.action_type.actions_indexes['FASTER'])
-        # Going slower is always available if using longitudinal control.
-        if self.action_type.longitudinal:
-            actions.append(self.action_type.actions_indexes['SLOWER'])
-        return actions
 
 
 register(
