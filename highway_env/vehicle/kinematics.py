@@ -51,36 +51,53 @@ class Vehicle(RoadObject):
                       lane_from: Optional[str] = None,
                       lane_to: Optional[str] = None,
                       lane_id: Optional[int] = None,
-                      spacing: float = 1) \
+                      spacing: float = 1,
+                      add_backwards: bool = False) \
             -> "Vehicle":
         """
         Create a random vehicle on the road.
 
-        The lane and /or speed are chosen randomly, while longitudinal position is chosen behind the last
-        vehicle in the road with density based on the number of lanes.
+        The lane and /or speed are chosen randomly, while longitudinal position
+        is chosen behind the last vehicle in the road with density based on the
+        number of lanes.
 
         :param road: the road where the vehicle is driving
         :param speed: initial speed in [m/s]. If None, will be chosen randomly
         :param lane_from: start node of the lane to spawn in
         :param lane_to: end node of the lane to spawn in
         :param lane_id: id of the lane to spawn in
-        :param spacing: ratio of spacing to the front vehicle, 1 being the default
+        :param spacing: ratio of spacing to the front vehicle, 1 being the 
+            default
+        :param add_backwards: if True, adds a vehicle behind all other vehicles.
         :return: A vehicle with random position and/or speed
         """
-        _from = lane_from or road.np_random.choice(list(road.network.graph.keys()))
-        _to = lane_to or road.np_random.choice(list(road.network.graph[_from].keys()))
-        _id = lane_id if lane_id is not None else road.np_random.choice(len(road.network.graph[_from][_to]))
+        _from = lane_from or road.np_random.choice(
+            list(road.network.graph.keys()))
+        _to = lane_to or road.np_random.choice(
+            list(road.network.graph[_from].keys()))
+        _id = lane_id if lane_id is not None else road.np_random.choice(
+            len(road.network.graph[_from][_to]))
         lane = road.network.get_lane((_from, _to, _id))
         if speed is None:
             if lane.speed_limit is not None:
-                speed = road.np_random.uniform(0.7*lane.speed_limit, 0.8*lane.speed_limit)
+                speed = road.np_random.uniform(
+                    0.7*lane.speed_limit, 1.0*lane.speed_limit)
             else:
-                speed = road.np_random.uniform(Vehicle.DEFAULT_INITIAL_SPEEDS[0], Vehicle.DEFAULT_INITIAL_SPEEDS[1])
+                speed = road.np_random.uniform(
+                    Vehicle.DEFAULT_INITIAL_SPEEDS[0],
+                    Vehicle.DEFAULT_INITIAL_SPEEDS[1])
         default_spacing = 12+1.0*speed
-        offset = spacing * default_spacing * np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
-        x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
-            if len(road.vehicles) else 3*offset
-        x0 += offset * road.np_random.uniform(0.9, 1.1)
+        offset = spacing * default_spacing * \
+            np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
+        if add_backwards:
+            x0 = np.min([lane.local_coordinates(v.position)[0]
+                        for v in road.vehicles])
+            x0 -= offset * road.np_random.uniform(0.9, 1.1)
+        else:
+            x0 = np.max([lane.local_coordinates(v.position)[0]
+                         for v in road.vehicles]) \
+                if len(road.vehicles) else 3*offset
+            x0 += offset * road.np_random.uniform(0.9, 1.1)
         v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)
         return v
 
@@ -112,9 +129,10 @@ class Vehicle(RoadObject):
         """
         Propagate the vehicle state given its actions.
 
-        Integrate a modified bicycle model with a 1st-order response on the steering wheel dynamics.
-        If the vehicle is crashed, the actions are overridden with erratic steering and braking until complete stop.
-        The vehicle's current lane is updated.
+        Integrate a modified bicycle model with a 1st-order response on the
+        steering wheel dynamics. If the vehicle is crashed, the actions are
+        overridden with erratic steering and braking until complete stop. The 
+        vehicle's current lane is updated.
 
         :param dt: timestep of integration of the model [s]
         """
@@ -139,18 +157,24 @@ class Vehicle(RoadObject):
         self.action['steering'] = float(self.action['steering'])
         self.action['acceleration'] = float(self.action['acceleration'])
         if self.speed > self.MAX_SPEED:
-            self.action['acceleration'] = min(self.action['acceleration'], 1.0 * (self.MAX_SPEED - self.speed))
+            self.action['acceleration'] = min(
+                self.action['acceleration'],
+                1.0 * (self.MAX_SPEED - self.speed))
         elif self.speed < self.MIN_SPEED:
-            self.action['acceleration'] = max(self.action['acceleration'], 1.0 * (self.MIN_SPEED - self.speed))
+            self.action['acceleration'] = max(
+                self.action['acceleration'],
+                1.0 * (self.MIN_SPEED - self.speed))
 
     def on_state_update(self) -> None:
         if self.road:
-            self.lane_index = self.road.network.get_closest_lane_index(self.position, self.heading)
+            self.lane_index = self.road.network.get_closest_lane_index(
+                self.position, self.heading)
             self.lane = self.road.network.get_lane(self.lane_index)
             if self.road.record_history:
                 self.history.appendleft(self.create_from(self))
 
-    def predict_trajectory_constant_speed(self, times: np.ndarray) -> Tuple[List[np.ndarray], List[float]]:
+    def predict_trajectory_constant_speed(self, times: np.ndarray) \
+            -> Tuple[List[np.ndarray], List[float]]:
         if self.prediction_type == 'zero_steering':
             action = {'acceleration': 0.0, 'steering': 0.0}
         elif self.prediction_type == 'constant_steering':
@@ -172,13 +196,16 @@ class Vehicle(RoadObject):
 
     @property
     def velocity(self) -> np.ndarray:
-        return self.speed * self.direction  # TODO: slip angle beta should be used here
+        # TODO: slip angle beta should be used here
+        return self.speed * self.direction
 
     @property
     def destination(self) -> np.ndarray:
         if getattr(self, "route", None):
             last_lane_index = self.route[-1]
-            last_lane_index = last_lane_index if last_lane_index[-1] is not None else (*last_lane_index[:-1], 0)
+            last_lane_index = last_lane_index \
+                if last_lane_index[-1] is not None else (
+                    *last_lane_index[:-1], 0)
             last_lane = self.road.network.get_lane(last_lane_index)
             return last_lane.position(last_lane.length, 0)
         else:
@@ -187,7 +214,8 @@ class Vehicle(RoadObject):
     @property
     def destination_direction(self) -> np.ndarray:
         if (self.destination != self.position).any():
-            return (self.destination - self.position) / np.linalg.norm(self.destination - self.position)
+            return (self.destination - self.position) / \
+                np.linalg.norm(self.destination - self.position)
         else:
             return np.zeros((2,))
 
@@ -200,7 +228,8 @@ class Vehicle(RoadObject):
         else:
             return np.zeros((3,))
 
-    def to_dict(self, origin_vehicle: "Vehicle" = None, observe_intentions: bool = True) -> dict:
+    def to_dict(self, origin_vehicle: "Vehicle" = None,
+                observe_intentions: bool = True) -> dict:
         d = {
             'presence': 1,
             'x': self.position[0],
@@ -225,7 +254,9 @@ class Vehicle(RoadObject):
         return d
 
     def __str__(self):
-        return "{} #{}: {}".format(self.__class__.__name__, id(self) % 1000, self.position)
+        return "{} #{}: {}".format(self.__class__.__name__,
+                                   id(self) % 1000,
+                                   self.position)
 
     def __repr__(self):
         return self.__str__()
