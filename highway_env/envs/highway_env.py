@@ -1,7 +1,5 @@
-from typing import Dict, Text
-
 import numpy as np
-from typing import List, Tuple, Optional, Callable
+from typing import Dict, Text, List, Tuple, Optional, Callable
 from gym.envs.registration import register
 
 from highway_env import utils
