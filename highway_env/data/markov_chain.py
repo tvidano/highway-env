@@ -4,6 +4,7 @@ from scipy.sparse import csgraph
 import pickle
 from typing import Dict, Text, List, Tuple, Optional, Callable, Union
 import numpy as np
+import os
 
 
 class discrete_markov_chain(object):
@@ -165,20 +166,32 @@ class discrete_markov_chain(object):
         return transition_matrix
 
     def save_object(self,
-                    filename: str,
-                    save_transition_matrix: Optional[bool] = False):
-        if len(self.transition_data) == 0:
+                    filename: str):
+        # Determine if Markov chain is defined using a transition matrix or
+        # transition data.
+        is_defined_transition_data = hasattr(self, "_transition_data")
+        if is_defined_transition_data and len(self.transition_data) == 0:
             raise ValueError(
-                "Trying to save a markov chain with no transition_data. If you"
-                " want to save the transition_matrix, set "
-                "save_transition_matrix = True")
-        with open(filename, "wb") as file:
-            pickle.dump(self.transition_data, file, pickle.HIGHEST_PROTOCOL)
+                "Trying to save a markov chain with no transition_data")
+        elif is_defined_transition_data:
+            _, ext = os.path.splitext(filename)
+            assert ext != ".npz", "Cannot save transition data as .npz file."
+            with open(filename, "wb") as file:
+                pickle.dump((self.transition_data, self.num_states), file,
+                            pickle.HIGHEST_PROTOCOL)
+        elif not is_defined_transition_data:
+            sparse.save_npz(filename, self.transition_matrix)
+        else:
+            raise NotImplementedError
 
     def load_object(self, filename):
-        # TODO: Support loading transition matrix as well as transition data.
-        with open(filename, "rb") as file:
-            self.transition_data = pickle.load(file)
+        _, ext = os.path.splitext(filename)
+        if ext == ".npz":
+            self.transition_matrix = sparse.load_npz(filename)
+        else:
+            with open(filename, "rb") as file:
+                transition_data, self.num_states = pickle.load(file)
+                self.transition_data = transition_data
 
     def _get_transition_matrix_from_data(self) -> sparse.spmatrix:
         # Get all starting states and their frequencies. Do not include the last
@@ -199,3 +212,20 @@ class discrete_markov_chain(object):
             transition_matrix[past_state, current_state] += 1 / \
                 denominator_dict[past_state]
         return transition_matrix.asformat('csr')
+
+    def _dist(self, current_state: int, next_state: int) -> int:
+        """
+        Computes Hamming Distance for state encodings. Assumes the state is an
+        integer encoding of a binary vector where each item in the vector 
+        corresponds to occupancy state of an occupancy grid. 
+
+        Example:
+            Occupancy grid has 4 spaces where each state can be occupied = 1, 
+            or unoccupied = 0. The state is therefore X1 = {0, 0, 0, 0} for a
+            fully unoccupied grid, and X2 = {1, 1, 1, 1} for a fully occupied 
+            grid. The distance between X1 and X2 is best represented by the
+            Hamming distance. This can be easily computed by the XOR bitwise
+            operator in Python. X1 = {0, 0, 0, 0} = 0, X2 = {1, 1, 1, 1} = 16.
+            self._dist(0, 16) = 4. Since only 4 bits are required to be flipped
+            to change the state from 0 to 16.s
+        """

@@ -1,3 +1,4 @@
+import os
 from tkinter import Entry
 import numpy as np
 import pytest
@@ -25,8 +26,21 @@ def test_markov_from_data():
 
 
 def test_save_and_load_data():
-    # TODO: Test saving and loading from data.
-    return NotImplementedError
+    data = [0, 2, 2, 2]
+    mc = discrete_markov_chain(transition_data=data, num_states=3)
+    filename = os.path.join(".", "test_markov_chain")
+    mc.save_object(filename)
+    mc2 = discrete_markov_chain(transition_matrix=np.array([[1.0]]))
+    mc2.load_object(filename)
+    assert mc2.transition_data == data
+    expected_transition_matrix = np.array([
+        [0, 0, 1],
+        [0, 0, 0],
+        [0, 0, 1]
+    ])
+    assert np.linalg.norm(mc2.transition_matrix -
+                          expected_transition_matrix) == 0.
+    os.remove(filename)
 
 
 def test_markov_from_matrix():
@@ -41,8 +55,19 @@ def test_markov_from_matrix():
 
 
 def test_save_and_load_matrix():
-    # TODO: Test saving and loading from a matrix.
-    return NotImplementedError
+    matrix = np.array([
+        [0.7, 0.2, 0.1],
+        [0.4, 0.6, 0.0],
+        [0.0, 1.0, 0.0]
+    ])
+    mc = discrete_markov_chain(transition_matrix=matrix)
+    filename = os.path.join(".", "test_markov_chain")
+    mc.save_object(filename)
+    mc2 = discrete_markov_chain(transition_matrix=np.array([[1.0]]))
+    mc2.load_object(filename + ".npz")
+    assert np.linalg.norm(mc2.transition_matrix -
+                          matrix) == 0.
+    os.remove(filename + ".npz")
 
 
 def test_irreducible():
