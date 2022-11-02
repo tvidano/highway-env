@@ -14,7 +14,7 @@ class discrete_markov_chain(object):
     """
 
     def __init__(self, *,
-                 transition_data: Optional[List] = None,
+                 transition_data: Optional[np.ndarray] = None,
                  num_states: Optional[int] = None,
                  transition_matrix: Union[sparse.spmatrix, np.ndarray] = None):
         # Enforce mutually exclusive instantiation methods.
@@ -146,8 +146,8 @@ class discrete_markov_chain(object):
         stationary_distribution = self.get_stationary_distribution()
         entropy_rate = 0
         P = self.transition_matrix.tocoo()
-        for i, v in zip(P.row, P.data):
-            entropy_rate += stationary_distribution[i] * v * np.log2(v)
+        for i, P_ij in zip(P.row, P.data):
+            entropy_rate += stationary_distribution[i] * P_ij * np.log2(P_ij)
         entropy_rate *= -1
         return entropy_rate
 
@@ -194,6 +194,9 @@ class discrete_markov_chain(object):
                 self.transition_data = transition_data
 
     def _get_transition_matrix_from_data(self) -> sparse.spmatrix:
+        # If data is 1D then assume it is from a single experiment. If 2D then
+        # each row is a separate experiment.
+        
         # Get all starting states and their frequencies. Do not include the last
         # state because it is not a starting state in a transition.
         states, states_frequency = np.unique(self.transition_data[:-1],
@@ -227,5 +230,15 @@ class discrete_markov_chain(object):
             Hamming distance. This can be easily computed by the XOR bitwise
             operator in Python. X1 = {0, 0, 0, 0} = 0, X2 = {1, 1, 1, 1} = 16.
             self._dist(0, 16) = 4. Since only 4 bits are required to be flipped
-            to change the state from 0 to 16.s
+            to change the state from 0 to 16.
         """
+        def bit_count(n):
+            count = 0
+            while n > 0:
+                count += 1
+                # Eliminate the least significant 1 in binary format of n.
+                n = n & (n - 1)
+            return count
+        
+        hamming_distance = current_state ^ next_state
+        return bit_count(hamming_distance)

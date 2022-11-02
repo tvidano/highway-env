@@ -24,7 +24,7 @@ from tqdm import tqdm
 local_highway_env = op.join(op.dirname(op.realpath(__file__)), "..",)
 sys.path.insert(1, local_highway_env)
 import highway_env  # noqa
-from highway_env.data.markov_chain import markov_chain  # noqa
+from highway_env.data.markov_chain import discrete_markov_chain  # noqa
 
 # Run a single episode:
 logger.setLevel(logger.INFO)
@@ -54,12 +54,16 @@ def convert_array_to_int(array):
     return int(output)
 
 
-for seed in tqdm(range(111_110, 111_111)):
+def convert_int_to_array(int):
+    return f'{int:016b}'
+
+
+for seed in tqdm(range(111_110, 111_112)):
+    print(f"seed:{seed}")
     terminated, truncated = False, False
     obs = env.reset(seed=seed)
     num_states = 2**16
-    prev_state = 0
-    mc = markov_chain(num_states)
+    state_record = []
     while not truncated and not terminated:
         action = agent.act(obs)
         obs, reward, terminated, truncated, info = env.step(action)
@@ -71,11 +75,10 @@ for seed in tqdm(range(111_110, 111_111)):
         #   * stationarity
         #   * markov property
         #   * time-invariant
-        mc.update_transition_matrix(prev_state, obs_state)
-        prev_state = obs_state
-        # env.render()
-    mc.save_object(f"mc_{seed}")
-    with open(f"mc_{seed}", "rb") as file:
-        mc2 = pickle.load(file)
-    mc.get_stationary_matrix()
+        state_record.append(obs_state)
+        env.render()
+    print(f"unique states:\t{np.unique(state_record)}")
+    mc = discrete_markov_chain(transition_data=state_record, num_states=num_states)
+    print(f"irreducible? {mc.is_irreducible()}")
+    # mc.save_object(op.join(".",f"{seed}"))
 env.close()
