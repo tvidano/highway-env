@@ -58,7 +58,10 @@ def convert_int_to_array(int):
     return f'{int:016b}'
 
 
-for seed in tqdm(range(111_110, 111_112)):
+start_seed = 100_000
+end_seed = 100_010
+exp_record = []
+for seed in tqdm(range(start_seed, end_seed + 1)):
     print(f"seed:{seed}")
     terminated, truncated = False, False
     obs = env.reset(seed=seed)
@@ -77,8 +80,10 @@ for seed in tqdm(range(111_110, 111_112)):
         #   * time-invariant
         state_record.append(obs_state)
         env.render()
-    print(f"unique states:\t{np.unique(state_record)}")
-    mc = discrete_markov_chain(transition_data=state_record, num_states=num_states)
-    print(f"irreducible? {mc.is_irreducible()}")
-    # mc.save_object(op.join(".",f"{seed}"))
+    exp_record.append(state_record)
+print(f"unique states:\t{np.unique(exp_record)}")
+mc = discrete_markov_chain(
+    transition_data=exp_record, num_states=num_states)
+print(f"irreducible? {mc.is_irreducible()}")
+mc.save_object(op.join(".", f"{start_seed}_{end_seed}"))
 env.close()

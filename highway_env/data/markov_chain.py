@@ -36,7 +36,11 @@ class discrete_markov_chain(object):
         return self._transition_data
 
     @transition_data.setter
-    def transition_data(self, transition_data: List):
+    def transition_data(self, transition_data: Union[List, np.ndarray]):
+        if isinstance(transition_data, list):
+            transition_data = np.array(transition_data)
+        if transition_data.ndim == 1:
+            transition_data = transition_data[np.newaxis, :]
         self._transition_data = transition_data
         self.transition_matrix = self._get_transition_matrix_from_data()
 
@@ -136,11 +140,34 @@ class discrete_markov_chain(object):
             else:
                 return ValueError(f"{method} unrecognized.")
 
-    def compare(self, markov_chain_b):
-        # TODO: determine how to compare two markov chains. The ultimate goal is
-        # to evaluate how wrong chain b is at predicting trajectories from
-        # chain a.
-        return NotImplementedError
+    def compare(self, markov_chain_b, eps=1e-4):
+        # Compare to markov_chain_b by computing mean of the KL divergence with
+        # absolute discounting of each row of the two markov chains. Rows are
+        # skipped if they are empty in either markov chain.
+        chain_a_matrix = self.transition_matrix.todok()
+        chain_b_matrix = markov_chain_b.transition_matrix.todok()
+        a_nonzero_rows = np.unique(chain_a_matrix.nonzero()[0])
+        b_nonzero_rows = np.unique(chain_b_matrix.nonzero()[0])
+        kl_divs = []
+        for row in a_nonzero_rows:
+            if row not in b_nonzero_rows:
+                continue
+            a_row = chain_a_matrix.getrow(row)
+            b_row = chain_b_matrix.getrow(row)
+            a_nonzero_cols = set(a_row.nonzero()[1])
+            b_nonzero_cols = set(b_row.nonzero()[1])
+            a_not_in_b = a_nonzero_cols - b_nonzero_cols
+            b_not_in_a = b_nonzero_cols - a_nonzero_cols
+            if len(a_not_in_b) > 0:
+                a_row[a_nonzero_cols] -= eps / len(a_nonzero_cols)
+                a_row[a_not_in_b] = eps / len(a_not_in_b)
+            if len(b_not_in_a) > 0:
+                b_row[b_nonzero_cols] -= eps / len(b_nonzero_cols)
+                b_row[b_not_in_a] = eps / len(b_not_in_a)
+            a_row = sparse.find(a_row)[2]
+            b_row = sparse.find(b_row)[2]
+            kl_divs.append(sum(a_row * np.log2(a_row / b_row)))
+        return np.mean(kl_divs)
 
     def entropy_rate(self):
         stationary_distribution = self.get_stationary_distribution()
@@ -196,24 +223,24 @@ class discrete_markov_chain(object):
     def _get_transition_matrix_from_data(self) -> sparse.spmatrix:
         # If data is 1D then assume it is from a single experiment. If 2D then
         # each row is a separate experiment.
-        
-        # Get all starting states and their frequencies. Do not include the last
-        # state because it is not a starting state in a transition.
-        states, states_frequency = np.unique(self.transition_data[:-1],
-                                             return_counts=True)
-        denominator_dict = {
-            state: state_frequency for state, state_frequency in
-            zip(states, states_frequency)}
-        # Get numerator matrix from the transition_data.
         transition_matrix = sparse.lil_matrix(
             (self.num_states, self.num_states), dtype=np.float64)
-        # Build 1st order markov chain transition matrix by iterating through
-        # all the data. Skip the first state in the data to count transitions.
-        for i, current_state in enumerate(self.transition_data[1:]):
-            past_state = self.transition_data[i]
-            # Assume transition data is encoded as integers.
-            transition_matrix[past_state, current_state] += 1 / \
-                denominator_dict[past_state]
+        for i in range(self.transition_data.shape[0]):
+            # Get all starting states and their frequencies. Do not include the
+            # last state because it is not a starting state in a transition.
+            states, states_frequency = np.unique(self.transition_data[i, :-1],
+                                                 return_counts=True)
+            denominator_dict = {
+                state: state_frequency for state, state_frequency in
+                zip(states, states_frequency)}
+            # Build 1st order markov chain transition matrix by iterating
+            # through all the data. Skip the first state in the data to count
+            # transitions.
+            for j, current_state in enumerate(self.transition_data[i, 1:]):
+                past_state = self.transition_data[i, j]
+                # Assume transition data is encoded as integers.
+                transition_matrix[past_state, current_state] += 1 / \
+                    denominator_dict[past_state]
         return transition_matrix.asformat('csr')
 
     def _dist(self, current_state: int, next_state: int) -> int:
@@ -239,6 +266,6 @@ class discrete_markov_chain(object):
                 # Eliminate the least significant 1 in binary format of n.
                 n = n & (n - 1)
             return count
-        
+
         hamming_distance = current_state ^ next_state
         return bit_count(hamming_distance)

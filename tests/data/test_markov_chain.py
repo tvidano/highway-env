@@ -13,15 +13,15 @@ from highway_env.data.markov_chain import discrete_markov_chain  # noqa
 
 
 def test_markov_from_data():
-    data = [0, 2, 2, 2]
+    data = [
+        [0, 0, 0],
+        [1, 1, 1],
+        [2, 2, 2]
+    ]
     mc = discrete_markov_chain(transition_data=data, num_states=3)
     transition_matrix = mc.transition_matrix
     assert isinstance(transition_matrix, sparse.spmatrix)
-    expected_transition_matrix = np.array([
-        [0, 0, 1],
-        [0, 0, 0],
-        [0, 0, 1]
-    ])
+    expected_transition_matrix = np.eye(3)
     assert np.linalg.norm(transition_matrix - expected_transition_matrix) == 0.
 
 
@@ -32,7 +32,7 @@ def test_save_and_load_data():
     mc.save_object(filename)
     mc2 = discrete_markov_chain(transition_matrix=np.array([[1.0]]))
     mc2.load_object(filename)
-    assert mc2.transition_data == data
+    assert list(mc2.transition_data.flatten()) == data
     expected_transition_matrix = np.array([
         [0, 0, 1],
         [0, 0, 0],
@@ -152,4 +152,27 @@ def test_entropy_rate():
     assert entropy_rate > 0
     assert abs(entropy_rate - expected_entropy_rate) < 1e-12
 
-# TODO: Add tests for compare().
+
+def test_compare():
+    A = np.eye(3)
+    B = np.eye(3)
+    A_mc = discrete_markov_chain(transition_matrix=A)
+    B_mc = discrete_markov_chain(transition_matrix=B)
+    comparison = A_mc.compare(B_mc)
+    assert comparison == 0.
+
+    A = np.array([
+        [0.5, 0.2, 0.3],
+        [0.0, 0.8, 0.2],
+        [0.0, 0.5, 0.5]
+    ])
+    B = np.array([
+        [0.5, 0.3, 0.2],
+        [0.0, 0.8, 0.2],
+        [0.0, 0.0, 0.0]
+    ])
+    A_mc = discrete_markov_chain(transition_matrix=A)
+    B_mc = discrete_markov_chain(transition_matrix=B)
+    comparison = A_mc.compare(B_mc)
+    assert comparison == (0.2 * np.log2(0.2 / 0.3) +
+                          0.3 * np.log2(0.3 / 0.2)) / 2
