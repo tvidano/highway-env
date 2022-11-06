@@ -15,6 +15,7 @@ from highway_env.data.markov_chain import discrete_markov_chain  # noqa
 def test_markov_from_data():
     # Able to instantiate with no data.
     mc = discrete_markov_chain(transition_data=[], num_states=3)
+
     # Able to instantiate with data of unequal length.
     data = [
         [0, 0, 0],
@@ -26,6 +27,32 @@ def test_markov_from_data():
     transition_matrix = mc.transition_matrix
     assert isinstance(transition_matrix, sparse.spmatrix)
     expected_transition_matrix = np.eye(3)
+    assert np.linalg.norm(transition_matrix - expected_transition_matrix) == 0.
+
+    # Able to handle case when last state is the only observation of that state
+    # and when first state is the only observation of that state.
+    data = [
+        [3, 1, 0, 1],
+        [0, 1, 0, 2],  # from 2 assume observations to 0, 3
+    ]
+    mc = discrete_markov_chain(transition_data=data, num_states=4)
+    transition_matrix = mc.transition_matrix
+    expected_transition_matrix = np.array([
+        [0, 2/3, 1/3, 0],
+        [1, 0, 0, 0],
+        [1/2, 0, 0, 1/2],
+        [0, 1, 0, 0],
+    ])
+    assert np.linalg.norm(transition_matrix - expected_transition_matrix) == 0.
+
+    # Able to handle probabilities between [0,1].
+    data = [[0, 1, 1, 0, 1]]
+    mc = discrete_markov_chain(transition_data=data, num_states=2)
+    transition_matrix = mc.transition_matrix
+    expected_transition_matrix = np.array([
+        [0, 1],
+        [0.5, 0.5],
+    ])
     assert np.linalg.norm(transition_matrix - expected_transition_matrix) == 0.
 
 
@@ -174,15 +201,15 @@ def test_absolute_discounting():
 
 
 def test_compare():
-    # # Check basic computation of kl divergence.
-    # A = np.eye(3)
-    # B = np.eye(3)
-    # A_mc = discrete_markov_chain(transition_matrix=A)
-    # B_mc = discrete_markov_chain(transition_matrix=B)
-    # diff_states, mean, std = A_mc.compare(B_mc)
-    # assert diff_states == 0.
-    # assert mean == 0.
-    # assert std == 0.
+    # Check basic computation of kl divergence.
+    A = np.eye(3)
+    B = np.eye(3)
+    A_mc = discrete_markov_chain(transition_matrix=A)
+    B_mc = discrete_markov_chain(transition_matrix=B)
+    diff_states, mean, std = A_mc.compare(B_mc)
+    assert diff_states == 0.
+    assert mean == 0.
+    assert std == 0.
 
     # Check handling of nonzero rows and computation of absolute smoothing.
     A = np.array([
@@ -200,7 +227,7 @@ def test_compare():
     A_mc = discrete_markov_chain(transition_matrix=A)
     B_mc = discrete_markov_chain(transition_matrix=B)
     diff_states, mean, std = A_mc.compare(B_mc)
-    assert diff_states == 2.
+    assert diff_states == 1.
     eps = 1e-4
     A_expected_0 = np.array([
         [A[0, 0] - eps / 3, A[0, 1] - eps / 3, A[0, 2] - eps / 3, eps],
@@ -234,5 +261,14 @@ def test_add():
              [2, 2, 2, 2]]
     mc1 = discrete_markov_chain(transition_data=data1, num_states=num_states)
     mc2 = discrete_markov_chain(transition_data=data2, num_states=num_states)
-    mc3 = mc1 + mc2
-    assert mc3.transition_data == data1 + data2
+    data3 = [[0, 1, 0, 1, 1, 1],
+             [1, 2, 0, 1, 2, 0]]
+    mc3 = discrete_markov_chain(transition_data=data3, num_states=num_states)
+    mc4 = mc1 + mc2 + mc3
+    assert mc4.transition_data == data1 + data2 + data3
+
+
+def test_dist():
+    mc = discrete_markov_chain(transition_data=[], num_states=1)
+    assert mc._dist(4, 0) == 1
+    assert mc._dist(3, 0) == 2

@@ -96,8 +96,8 @@ def experiment(start_seed, end_seed, shared_dict):
 if __name__ == "__main__":
     with multiprocessing.Manager() as manager:
         # Define data collection configuration.
-        start_seed = 2_000
-        end_seed = 3_000
+        start_seed = 3_000
+        end_seed = 5_000
         num_processes = 5
         step = int((end_seed - start_seed) / num_processes)
 

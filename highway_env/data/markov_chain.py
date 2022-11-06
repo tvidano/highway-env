@@ -166,6 +166,20 @@ class discrete_markov_chain(object):
             a[0, a_zero] = eps / len(a_zero)
         return a
 
+    def get_outlying_states(self, markov_chain_b):
+        """Returns the states and number of states in chain a that don't 
+        belong to chain b and the states of b that don't belong to chain a."""
+        chain_a_matrix = self.transition_matrix.todok()
+        chain_b_matrix = markov_chain_b.transition_matrix.todok()
+        a_nonzero_rows = set(np.unique(chain_a_matrix.nonzero()[0]))
+        b_nonzero_rows = set(np.unique(chain_b_matrix.nonzero()[0]))
+        # First analyze the sets of states observed in both markov chains.
+        a_union_b = a_nonzero_rows.union(b_nonzero_rows)
+        a_intersect_b = a_nonzero_rows.intersection(b_nonzero_rows)
+        states_not_in_a_or_b = a_union_b - a_intersect_b
+        state_mismatch_count = len(states_not_in_a_or_b)
+        return (states_not_in_a_or_b, state_mismatch_count)
+
     def compare(self, markov_chain_b,
                 eps: Optional[float] = 1e-4) -> Tuple:
         """
@@ -173,52 +187,28 @@ class discrete_markov_chain(object):
         absolute discounting of each row of the two markov chains. Rows are
         skipped if they are empty in either markov chain.
         """
+        # Analyze the sets of chain a and chain b.
         chain_a_matrix = self.transition_matrix.todok()
         chain_b_matrix = markov_chain_b.transition_matrix.todok()
-        a_nonzero_rows = set(np.unique(chain_a_matrix.nonzero()[0]))
-        b_nonzero_rows = set(np.unique(chain_b_matrix.nonzero()[0]))
-        kl_divs = []
-        # First analyze the sets of states observed in both markov chains.
+        a_nonzero_rows = set(chain_a_matrix.nonzero()[0])
+        b_nonzero_rows = set(chain_b_matrix.nonzero()[0])
         a_union_b = a_nonzero_rows.union(b_nonzero_rows)
-        a_intersect_b = set(a_nonzero_rows).intersection(set(b_nonzero_rows))
-        states_not_in_a_or_b = a_union_b - a_intersect_b
-        state_mismatch_count = len(states_not_in_a_or_b)
+        a_intersect_b = a_nonzero_rows.intersection(b_nonzero_rows)
         # Compute row-wise kl divergence with absolute smoothing.
+        kl_divs = []
         for row in a_intersect_b:
             a_row = chain_a_matrix.getrow(row).tolil()
             b_row = chain_b_matrix.getrow(row).tolil()
             # Remove where both a and b are zero.
             a_nonzero = set(a_row.nonzero()[1])
             b_nonzero = set(b_row.nonzero()[1])
-            a_union_b = list(a_nonzero.union(b_nonzero))
-            a_row = self.absolute_discount(a_row[0, a_union_b], eps)
-            b_row = self.absolute_discount(b_row[0, a_union_b], eps)
-            # # Store columns in the row that are nonzero using sets for fast
-            # # comparison between markov_chain_a and markov_chain_b.
-            # a_nonzero_cols = set(a_row.nonzero()[1])
-            # b_nonzero_cols = set(b_row.nonzero()[1])
-            # # Find the columns in a_row that are not in b_row and vice versa.
-            # a_not_in_b = a_nonzero_cols - b_nonzero_cols
-            # b_not_in_a = b_nonzero_cols - a_nonzero_cols
-            # # If there are columns in a_row that aren't in b_row apply absolute
-            # # discounting.
-            # if len(a_not_in_b) > 0:
-            #     b_row[:, list(b_nonzero_cols)] -= \
-            #         eps / len(b_nonzero_cols) * np.ones(len(b_nonzero_cols))
-            #     b_row[:, list(a_not_in_b)] = eps / len(a_not_in_b)
-            # # If there are columns in b_row that aren't in a_row apply absolute
-            # # discounting.
-            # if len(b_not_in_a) > 0:
-            #     a_row[:, list(a_nonzero_cols)] -= \
-            #         eps / len(a_nonzero_cols) * np.ones(len(a_nonzero_cols))
-            #     a_row[:, list(b_not_in_a)] = eps / len(b_not_in_a)
-            # # After discounting locate all the columns in each row that nonzero.
-            # a_row = sparse.find(a_row)[2]
-            # b_row = sparse.find(b_row)[2]
+            a_col_union_b_col = list(a_nonzero.union(b_nonzero))
+            a_row = self.absolute_discount(a_row[0, a_col_union_b_col], eps)
+            b_row = self.absolute_discount(b_row[0, a_col_union_b_col], eps)
             kl_divs.append(np.sum(np.multiply(a_row, np.log2(a_row / b_row))))
-        return (state_mismatch_count, np.mean(kl_divs), np.std(kl_divs))
+        return (len(a_intersect_b) / len(a_union_b), np.mean(kl_divs), np.std(kl_divs))
 
-    def entropy_rate(self):
+    def entropy_rate(self) -> float:
         stationary_distribution = self.get_stationary_distribution()
         entropy_rate = 0
         P = self.transition_matrix.tocoo()
@@ -226,6 +216,13 @@ class discrete_markov_chain(object):
             entropy_rate += stationary_distribution[i] * P_ij * np.log2(P_ij)
         entropy_rate *= -1
         return entropy_rate
+
+    def simplify_matrix(self) -> np.ndarray:
+        """Returns a matrix with unobserved states removed."""
+        nonzero_rows, nonzero_cols = self.transition_matrix.nonzero()
+        observed_rows = set(nonzero_rows)
+        observed_cols = set(nonzero_cols)
+        return (observed_rows, observed_cols)
 
     def is_irreducible(self, transition_matrix=None):
         if transition_matrix is None:
@@ -282,13 +279,57 @@ class discrete_markov_chain(object):
                 past_state = row[j]
                 # Assume transition data is encoded as integers.
                 frequency_matrix[past_state, current_state] += 1
+        rows_set = self._remove_unobserved_states(frequency_matrix)
         # Normalize frequency matrix to get transition_matrix.
         transition_matrix = sparse.lil_matrix(
             (self.num_states, self.num_states), dtype=np.float64)
-        for row in np.unique(frequency_matrix.nonzero()[0]):
-            denominator = sparse.linalg.norm(frequency_matrix[row, :])
-            transition_matrix[row, :] = frequency_matrix[row, :] / denominator
+        for row in rows_set:
+            denominator = np.sum(frequency_matrix[row, :])
+            transition_matrix[row, :] = \
+                frequency_matrix[row, :].astype(np.float64) / denominator
         return transition_matrix.asformat('csr')
+
+    def _remove_unobserved_states(self, frequency_matrix):
+        """
+        It is possible that the data ends on a state that has never been seen
+        before. This will cause the column corresponding to that state to be
+        nonzero, but the row will be zero. When simulating this transition
+        matrix, this can cause problems. We can either make this an absorbing
+        state, remove the observation, or make some assumption about the next
+        state. For now, we assume the next state is a distance 1 from the
+        current state.
+
+        It is possible that the data starts on a state that is never seen
+        again. This will cause the column corresponding to that state to be
+        zero, but the row will be nonzero. This is not a problem when
+        simulating this transition matrix so this is not dealt with.
+        """
+        def find_closest_states(state, observed_states, d=1):
+            close_states = [s for s in observed_states
+                            if self._dist(state, s) == d]
+            if len(close_states) > 0:
+                return close_states
+            else:
+                close_states = find_closest_states(state,
+                                                   observed_states,
+                                                   d + 1)
+                return close_states
+
+        # Find the states in the columns that are not in the rows.
+        nonzero_rows, nonzero_cols = frequency_matrix.nonzero()
+        rows_set, cols_set = set(nonzero_rows), set(nonzero_cols)
+        outlier_states = cols_set - rows_set
+        for outlier_state in outlier_states:
+            # Find the previously observed states that are the closest.
+            close_states = find_closest_states(outlier_state, rows_set)
+            frequency_matrix[outlier_state,
+                             close_states] += 1 * np.ones(len(close_states))
+        # It is possible that removing the last observation from an experiment
+        # will expose a new last state that has never been visited before.
+        nonzero_rows, nonzero_cols = frequency_matrix.nonzero()
+        rows_set, cols_set = set(nonzero_rows), set(nonzero_cols)
+        assert len(cols_set - rows_set) == 0
+        return rows_set
 
     def _dist(self, current_state: int, next_state: int) -> int:
         """
