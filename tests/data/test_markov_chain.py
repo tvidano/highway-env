@@ -13,10 +13,14 @@ from highway_env.data.markov_chain import discrete_markov_chain  # noqa
 
 
 def test_markov_from_data():
+    # Able to instantiate with no data.
+    mc = discrete_markov_chain(transition_data=[], num_states=3)
+    # Able to instantiate with data of unequal length.
     data = [
         [0, 0, 0],
-        [1, 1, 1],
-        [2, 2, 2]
+        [1, 1, 1, 1, 1],
+        [2, 2, 2, 2],
+        [0, 0],
     ]
     mc = discrete_markov_chain(transition_data=data, num_states=3)
     transition_matrix = mc.transition_matrix
@@ -32,7 +36,7 @@ def test_save_and_load_data():
     mc.save_object(filename)
     mc2 = discrete_markov_chain(transition_matrix=np.array([[1.0]]))
     mc2.load_object(filename)
-    assert list(mc2.transition_data.flatten()) == data
+    assert list(mc2.transition_data[0]) == data
     expected_transition_matrix = np.array([
         [0, 0, 1],
         [0, 0, 0],
@@ -153,26 +157,82 @@ def test_entropy_rate():
     assert abs(entropy_rate - expected_entropy_rate) < 1e-12
 
 
-def test_compare():
-    A = np.eye(3)
-    B = np.eye(3)
-    A_mc = discrete_markov_chain(transition_matrix=A)
-    B_mc = discrete_markov_chain(transition_matrix=B)
-    comparison = A_mc.compare(B_mc)
-    assert comparison == 0.
+def test_absolute_discounting():
+    # Test on dense distribution.
+    eps = 1e-4
+    a = sparse.lil_matrix(np.array([[0.1, 0.5, 0.4]]))
+    mc = discrete_markov_chain(transition_data=[], num_states=1)
+    out = mc.absolute_discount(a, eps)
+    assert np.linalg.norm(a - out) < 1e-10
+    # Test on sparse distribution.
+    dist_a = sparse.lil_matrix(np.array([0.5, 0.0, 0.4, 0.0, 0.2]))
+    out = mc.absolute_discount(dist_a, eps)
+    expected_out = np.array(
+        [0.5 - eps / 3, eps / 2, 0.4 - eps / 3, eps / 2, 0.2 - eps / 3])
+    assert np.linalg.norm(out - expected_out) < 1e-10
+    assert np.linalg.norm(out) - 1. < 1e-10
 
+
+def test_compare():
+    # # Check basic computation of kl divergence.
+    # A = np.eye(3)
+    # B = np.eye(3)
+    # A_mc = discrete_markov_chain(transition_matrix=A)
+    # B_mc = discrete_markov_chain(transition_matrix=B)
+    # diff_states, mean, std = A_mc.compare(B_mc)
+    # assert diff_states == 0.
+    # assert mean == 0.
+    # assert std == 0.
+
+    # Check handling of nonzero rows and computation of absolute smoothing.
     A = np.array([
-        [0.5, 0.2, 0.3],
-        [0.0, 0.8, 0.2],
-        [0.0, 0.5, 0.5]
+        [0.5, 0.2, 0.3, 0.0],
+        [0.0, 0.8, 0.2, 0.0],
+        [0.0, 0.5, 0.5, 0.0],
+        [0.0, 0.0, 0.0, 0.0]
     ])
     B = np.array([
-        [0.5, 0.3, 0.2],
-        [0.0, 0.8, 0.2],
-        [0.0, 0.0, 0.0]
+        [0.5, 0.3, 0.0, 0.2],
+        [0.0, 0.8, 0.0, 0.2],
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]
     ])
     A_mc = discrete_markov_chain(transition_matrix=A)
     B_mc = discrete_markov_chain(transition_matrix=B)
-    comparison = A_mc.compare(B_mc)
-    assert comparison == (0.2 * np.log2(0.2 / 0.3) +
-                          0.3 * np.log2(0.3 / 0.2)) / 2
+    diff_states, mean, std = A_mc.compare(B_mc)
+    assert diff_states == 2.
+    eps = 1e-4
+    A_expected_0 = np.array([
+        [A[0, 0] - eps / 3, A[0, 1] - eps / 3, A[0, 2] - eps / 3, eps],
+    ])
+    A_expected_1 = np.array([
+        [A[1, 1] - eps / 2, A[1, 2] - eps / 2, eps]
+    ])
+    assert np.sum(A_expected_0) == pytest.approx(1)
+    assert np.sum(A_expected_1) == pytest.approx(1)
+    B_expected_0 = np.array([
+        [B[0, 0] - eps / 3, B[0, 1] - eps / 3, eps, B[0, 3] - eps / 3],
+    ])
+    B_expected_1 = np.array([
+        [B[1, 1] - eps / 2, eps, B[1, 3] - eps / 2],
+    ])
+    assert np.sum(B_expected_0) == pytest.approx(1)
+    assert np.sum(B_expected_1) == pytest.approx(1)
+    kl_1 = np.sum(A_expected_0 * np.log2(A_expected_0 / B_expected_0))
+    kl_2 = np.sum(A_expected_1 * np.log2(A_expected_1 / B_expected_1))
+    assert kl_1 > 0
+    assert kl_2 > 0
+    assert mean == np.mean([kl_1, kl_2])
+    assert std == np.std([kl_1, kl_2])
+
+
+def test_add():
+    data1 = [[0, 0, 0, 0, 0],
+             [1, 2, 1, 2, 1, 2]]
+    num_states = 3
+    data2 = [[0, 0, 0, 0],
+             [2, 2, 2, 2]]
+    mc1 = discrete_markov_chain(transition_data=data1, num_states=num_states)
+    mc2 = discrete_markov_chain(transition_data=data2, num_states=num_states)
+    mc3 = mc1 + mc2
+    assert mc3.transition_data == data1 + data2

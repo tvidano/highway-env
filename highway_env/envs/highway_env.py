@@ -215,9 +215,9 @@ class HighwayEnvLidar(HighwayEnv):
             # Scenario related configurations.
             "vehicles_count": 14,
             "lanes_count": 2,
-            "initial_ego_speed": 30,
-            "road_speed_limit": 33,
-            "vehicle_speeds": np.linspace(10, 35, 5),
+            "initial_ego_speed": 30,  # [m/s]
+            "road_speed_limit": 33,  # [m/s]
+            "vehicle_speeds": np.linspace(10, 35, 5),  # [m/s]
             "vehicles_density": 2.0,
             "adaptive_observations": True,
             "constant_base_lidar": False,  # uses base lidar frequency without

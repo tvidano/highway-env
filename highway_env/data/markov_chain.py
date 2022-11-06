@@ -31,16 +31,30 @@ class discrete_markov_chain(object):
         else:
             self.transition_matrix = transition_matrix
 
+    def __add__(self, markov_chain_b):
+        assert isinstance(markov_chain_b, discrete_markov_chain)
+        assert self.num_states == markov_chain_b.num_states
+        combined_transition_data = self.transition_data + markov_chain_b.transition_data
+        return discrete_markov_chain(transition_data=combined_transition_data,
+                                     num_states=self.num_states)
+
     @property
     def transition_data(self) -> List:
         return self._transition_data
 
     @transition_data.setter
     def transition_data(self, transition_data: Union[List, np.ndarray]):
-        if isinstance(transition_data, list):
-            transition_data = np.array(transition_data)
-        if transition_data.ndim == 1:
-            transition_data = transition_data[np.newaxis, :]
+        # Store transition_data as list of lists to support variable lengths of
+        # separate data entries.
+        if isinstance(transition_data, np.ndarray):
+            transition_data = list(transition_data)
+        # If not a list of lists, convert to a list of lists.
+        try:
+            if not isinstance(transition_data[0], list):
+                transition_data = [transition_data]
+        # Handle empty 1 depth lists.
+        except IndexError:
+            transition_data = [transition_data]
         self._transition_data = transition_data
         self.transition_matrix = self._get_transition_matrix_from_data()
 
@@ -140,34 +154,69 @@ class discrete_markov_chain(object):
             else:
                 return ValueError(f"{method} unrecognized.")
 
-    def compare(self, markov_chain_b, eps=1e-4):
-        # Compare to markov_chain_b by computing mean of the KL divergence with
-        # absolute discounting of each row of the two markov chains. Rows are
-        # skipped if they are empty in either markov chain.
+    def absolute_discount(self, dist_a, eps):
+        """
+        Fills dist_a to be dense but maintaining the sum at 1.
+        """
+        a = dist_a.todense()
+        a_nonzero = a.nonzero()[1]
+        a_zero = np.nonzero(a == 0.)[1]
+        if len(a_zero) > 0:
+            a[0, a_nonzero] -= eps / len(a_nonzero)
+            a[0, a_zero] = eps / len(a_zero)
+        return a
+
+    def compare(self, markov_chain_b,
+                eps: Optional[float] = 1e-4) -> Tuple:
+        """
+        Compare to markov_chain_b by computing mean of the KL divergence with
+        absolute discounting of each row of the two markov chains. Rows are
+        skipped if they are empty in either markov chain.
+        """
         chain_a_matrix = self.transition_matrix.todok()
         chain_b_matrix = markov_chain_b.transition_matrix.todok()
-        a_nonzero_rows = np.unique(chain_a_matrix.nonzero()[0])
-        b_nonzero_rows = np.unique(chain_b_matrix.nonzero()[0])
+        a_nonzero_rows = set(np.unique(chain_a_matrix.nonzero()[0]))
+        b_nonzero_rows = set(np.unique(chain_b_matrix.nonzero()[0]))
         kl_divs = []
-        for row in a_nonzero_rows:
-            if row not in b_nonzero_rows:
-                continue
-            a_row = chain_a_matrix.getrow(row)
-            b_row = chain_b_matrix.getrow(row)
-            a_nonzero_cols = set(a_row.nonzero()[1])
-            b_nonzero_cols = set(b_row.nonzero()[1])
-            a_not_in_b = a_nonzero_cols - b_nonzero_cols
-            b_not_in_a = b_nonzero_cols - a_nonzero_cols
-            if len(a_not_in_b) > 0:
-                a_row[a_nonzero_cols] -= eps / len(a_nonzero_cols)
-                a_row[a_not_in_b] = eps / len(a_not_in_b)
-            if len(b_not_in_a) > 0:
-                b_row[b_nonzero_cols] -= eps / len(b_nonzero_cols)
-                b_row[b_not_in_a] = eps / len(b_not_in_a)
-            a_row = sparse.find(a_row)[2]
-            b_row = sparse.find(b_row)[2]
-            kl_divs.append(sum(a_row * np.log2(a_row / b_row)))
-        return np.mean(kl_divs)
+        # First analyze the sets of states observed in both markov chains.
+        a_union_b = a_nonzero_rows.union(b_nonzero_rows)
+        a_intersect_b = set(a_nonzero_rows).intersection(set(b_nonzero_rows))
+        states_not_in_a_or_b = a_union_b - a_intersect_b
+        state_mismatch_count = len(states_not_in_a_or_b)
+        # Compute row-wise kl divergence with absolute smoothing.
+        for row in a_intersect_b:
+            a_row = chain_a_matrix.getrow(row).tolil()
+            b_row = chain_b_matrix.getrow(row).tolil()
+            # Remove where both a and b are zero.
+            a_nonzero = set(a_row.nonzero()[1])
+            b_nonzero = set(b_row.nonzero()[1])
+            a_union_b = list(a_nonzero.union(b_nonzero))
+            a_row = self.absolute_discount(a_row[0, a_union_b], eps)
+            b_row = self.absolute_discount(b_row[0, a_union_b], eps)
+            # # Store columns in the row that are nonzero using sets for fast
+            # # comparison between markov_chain_a and markov_chain_b.
+            # a_nonzero_cols = set(a_row.nonzero()[1])
+            # b_nonzero_cols = set(b_row.nonzero()[1])
+            # # Find the columns in a_row that are not in b_row and vice versa.
+            # a_not_in_b = a_nonzero_cols - b_nonzero_cols
+            # b_not_in_a = b_nonzero_cols - a_nonzero_cols
+            # # If there are columns in a_row that aren't in b_row apply absolute
+            # # discounting.
+            # if len(a_not_in_b) > 0:
+            #     b_row[:, list(b_nonzero_cols)] -= \
+            #         eps / len(b_nonzero_cols) * np.ones(len(b_nonzero_cols))
+            #     b_row[:, list(a_not_in_b)] = eps / len(a_not_in_b)
+            # # If there are columns in b_row that aren't in a_row apply absolute
+            # # discounting.
+            # if len(b_not_in_a) > 0:
+            #     a_row[:, list(a_nonzero_cols)] -= \
+            #         eps / len(a_nonzero_cols) * np.ones(len(a_nonzero_cols))
+            #     a_row[:, list(b_not_in_a)] = eps / len(b_not_in_a)
+            # # After discounting locate all the columns in each row that nonzero.
+            # a_row = sparse.find(a_row)[2]
+            # b_row = sparse.find(b_row)[2]
+            kl_divs.append(np.sum(np.multiply(a_row, np.log2(a_row / b_row))))
+        return (state_mismatch_count, np.mean(kl_divs), np.std(kl_divs))
 
     def entropy_rate(self):
         stationary_distribution = self.get_stationary_distribution()
@@ -223,24 +272,22 @@ class discrete_markov_chain(object):
     def _get_transition_matrix_from_data(self) -> sparse.spmatrix:
         # If data is 1D then assume it is from a single experiment. If 2D then
         # each row is a separate experiment.
+        # Build frequency matrix by counting all the transitions in data.
+        frequency_matrix = sparse.lil_matrix(
+            (self.num_states, self.num_states), dtype=np.uint16)
+        for row in self.transition_data:
+            # Build 1st order markov chain transition matrix. Skip the first
+            # state in the data to count transitions.
+            for j, current_state in enumerate(row[1:]):
+                past_state = row[j]
+                # Assume transition data is encoded as integers.
+                frequency_matrix[past_state, current_state] += 1
+        # Normalize frequency matrix to get transition_matrix.
         transition_matrix = sparse.lil_matrix(
             (self.num_states, self.num_states), dtype=np.float64)
-        for i in range(self.transition_data.shape[0]):
-            # Get all starting states and their frequencies. Do not include the
-            # last state because it is not a starting state in a transition.
-            states, states_frequency = np.unique(self.transition_data[i, :-1],
-                                                 return_counts=True)
-            denominator_dict = {
-                state: state_frequency for state, state_frequency in
-                zip(states, states_frequency)}
-            # Build 1st order markov chain transition matrix by iterating
-            # through all the data. Skip the first state in the data to count
-            # transitions.
-            for j, current_state in enumerate(self.transition_data[i, 1:]):
-                past_state = self.transition_data[i, j]
-                # Assume transition data is encoded as integers.
-                transition_matrix[past_state, current_state] += 1 / \
-                    denominator_dict[past_state]
+        for row in np.unique(frequency_matrix.nonzero()[0]):
+            denominator = sparse.linalg.norm(frequency_matrix[row, :])
+            transition_matrix[row, :] = frequency_matrix[row, :] / denominator
         return transition_matrix.asformat('csr')
 
     def _dist(self, current_state: int, next_state: int) -> int:
