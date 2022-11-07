@@ -267,7 +267,7 @@ class discrete_markov_chain(object):
         else:
             with open(filename, "rb") as file:
                 raw_data, self.num_states = pickle.load(file)
-                self.transition_data = list(*raw_data.values())
+                self.transition_data = list(raw_data.values())
                 self.raw_data = raw_data
 
     def _get_transition_matrix_from_data(self) -> sparse.spmatrix:

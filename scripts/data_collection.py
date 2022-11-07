@@ -94,17 +94,18 @@ def experiment(start_seed, end_seed, shared_dict):
 
 
 if __name__ == "__main__":
-    with multiprocessing.Manager() as manager:
-        # Define data collection configuration.
-        start_seed = 1_000
-        end_seed = 5_000
-        num_processes = 10
-        step = int((end_seed - start_seed) / num_processes)
+    # Define data collection configuration.
+    start_seed = 1_000
+    end_seed = 1_010
+    num_processes = 10
+    step = int((end_seed - start_seed) / num_processes)
 
-        # Get ranges for each process.
-        start_seeds = np.arange(start_seed, end_seed, step)
-        end_seeds = np.arange(start_seed - 1 + step, end_seed, step)
-        assert len(start_seeds) == len(end_seeds) == num_processes
+    # Get ranges for each process.
+    start_seeds = np.arange(start_seed, end_seed, step)
+    end_seeds = np.arange(start_seed - 1 + step, end_seed, step)
+    assert len(start_seeds) == len(end_seeds) == num_processes
+    raw_data = {}
+    with multiprocessing.Manager() as manager:
         # Create shared dictionary.
         experiment_record = manager.dict()
         # Create processes.
@@ -119,8 +120,9 @@ if __name__ == "__main__":
         # Wait for all processes to complete.
         for process in processes:
             process.join()
-        mc = discrete_markov_chain(
-            raw_data=experiment_record, num_states=2**16)
-        mc.save_object(
-            f"2_lane_low_density_low_cars_{min(start_seeds)}_{max(end_seeds)}")
-        print(experiment_record)
+        raw_data.update(experiment_record)
+    mc = discrete_markov_chain(
+        raw_data=raw_data, num_states=2**16)
+    mc.save_object(
+        f"2_lane_low_density_low_cars_{min(start_seeds)}_{max(end_seeds)}")
+    print(raw_data)

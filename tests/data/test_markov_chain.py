@@ -57,13 +57,16 @@ def test_markov_from_data():
 
 
 def test_save_and_load_data():
-    data = [0, 2, 2, 2]
-    mc = discrete_markov_chain(raw_data={0: data}, num_states=3)
+    data = {
+        0: [0, 2, 2, 2],
+        1: [0, 2, 2, 2],
+    }
+    mc = discrete_markov_chain(raw_data=data, num_states=3)
     filename = os.path.join(".", "test_markov_chain")
     mc.save_object(filename)
-    mc2 = discrete_markov_chain(transition_matrix=np.array([[1.0]]))
+    mc2 = discrete_markov_chain(raw_data={0: []}, num_states=3)
     mc2.load_object(filename)
-    assert list(mc2.transition_data[0]) == data
+    assert list(mc2.transition_data[0]) == data[0]
     expected_transition_matrix = np.array([
         [0, 0, 1],
         [0, 0, 0],
