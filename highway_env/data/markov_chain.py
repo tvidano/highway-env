@@ -14,19 +14,20 @@ class discrete_markov_chain(object):
     """
 
     def __init__(self, *,
-                 transition_data: Optional[np.ndarray] = None,
+                 raw_data: Optional[dict] = None,
                  num_states: Optional[int] = None,
                  transition_matrix: Union[sparse.spmatrix, np.ndarray] = None):
         # Enforce mutually exclusive instantiation methods.
-        assert transition_data is not None or transition_matrix is not None, \
+        assert raw_data is not None or transition_matrix is not None, \
             "Must instantiate with either |transition_data| or |num_states|."
 
         # If using transition data to create Markov chain.
-        if transition_data is not None:
+        if raw_data is not None:
             assert num_states is not None, \
                 "|num_states| must be provided when building from data."
             self.num_states = num_states
-            self.transition_data = transition_data
+            self.transition_data = list(raw_data.values())
+            self.raw_data = raw_data
         # If using transition matrix to create Markov chain.
         else:
             self.transition_matrix = transition_matrix
@@ -34,8 +35,10 @@ class discrete_markov_chain(object):
     def __add__(self, markov_chain_b):
         assert isinstance(markov_chain_b, discrete_markov_chain)
         assert self.num_states == markov_chain_b.num_states
-        combined_transition_data = self.transition_data + markov_chain_b.transition_data
-        return discrete_markov_chain(transition_data=combined_transition_data,
+        # If the same seed was used to generate data in chain a and chain b,
+        # the data associated with that seed is overwritten with chain b's data.
+        combined_raw_data = {**self.raw_data, **markov_chain_b.raw_data}
+        return discrete_markov_chain(raw_data=combined_raw_data,
                                      num_states=self.num_states)
 
     @property
@@ -250,7 +253,7 @@ class discrete_markov_chain(object):
             _, ext = os.path.splitext(filename)
             assert ext != ".npz", "Cannot save transition data as .npz file."
             with open(filename, "wb") as file:
-                pickle.dump((self.transition_data, self.num_states), file,
+                pickle.dump((self.raw_data, self.num_states), file,
                             pickle.HIGHEST_PROTOCOL)
         elif not is_defined_transition_data:
             sparse.save_npz(filename, self.transition_matrix)
@@ -263,8 +266,9 @@ class discrete_markov_chain(object):
             self.transition_matrix = sparse.load_npz(filename)
         else:
             with open(filename, "rb") as file:
-                transition_data, self.num_states = pickle.load(file)
-                self.transition_data = transition_data
+                raw_data, self.num_states = pickle.load(file)
+                self.transition_data = list(*raw_data.values())
+                self.raw_data = raw_data
 
     def _get_transition_matrix_from_data(self) -> sparse.spmatrix:
         # If data is 1D then assume it is from a single experiment. If 2D then

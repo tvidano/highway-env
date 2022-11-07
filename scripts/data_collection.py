@@ -96,9 +96,9 @@ def experiment(start_seed, end_seed, shared_dict):
 if __name__ == "__main__":
     with multiprocessing.Manager() as manager:
         # Define data collection configuration.
-        start_seed = 3_000
+        start_seed = 1_000
         end_seed = 5_000
-        num_processes = 5
+        num_processes = 10
         step = int((end_seed - start_seed) / num_processes)
 
         # Get ranges for each process.
@@ -119,9 +119,8 @@ if __name__ == "__main__":
         # Wait for all processes to complete.
         for process in processes:
             process.join()
-        experiment_data = list(experiment_record.values())
         mc = discrete_markov_chain(
-            transition_data=experiment_data, num_states=2**16)
+            raw_data=experiment_record, num_states=2**16)
         mc.save_object(
             f"2_lane_low_density_low_cars_{min(start_seeds)}_{max(end_seeds)}")
         print(experiment_record)

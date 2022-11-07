@@ -14,16 +14,16 @@ from highway_env.data.markov_chain import discrete_markov_chain  # noqa
 
 def test_markov_from_data():
     # Able to instantiate with no data.
-    mc = discrete_markov_chain(transition_data=[], num_states=3)
+    mc = discrete_markov_chain(raw_data={0: []}, num_states=3)
 
     # Able to instantiate with data of unequal length.
-    data = [
-        [0, 0, 0],
-        [1, 1, 1, 1, 1],
-        [2, 2, 2, 2],
-        [0, 0],
-    ]
-    mc = discrete_markov_chain(transition_data=data, num_states=3)
+    data = {
+        0: [0, 0, 0],
+        1: [1, 1, 1, 1, 1],
+        2: [2, 2, 2, 2],
+        3: [0, 0],
+    }
+    mc = discrete_markov_chain(raw_data=data, num_states=3)
     transition_matrix = mc.transition_matrix
     assert isinstance(transition_matrix, sparse.spmatrix)
     expected_transition_matrix = np.eye(3)
@@ -31,11 +31,11 @@ def test_markov_from_data():
 
     # Able to handle case when last state is the only observation of that state
     # and when first state is the only observation of that state.
-    data = [
-        [3, 1, 0, 1],
-        [0, 1, 0, 2],  # from 2 assume observations to 0, 3
-    ]
-    mc = discrete_markov_chain(transition_data=data, num_states=4)
+    data = {
+        0: [3, 1, 0, 1],
+        1: [0, 1, 0, 2],  # from 2 assume observations to 0, 3
+    }
+    mc = discrete_markov_chain(raw_data=data, num_states=4)
     transition_matrix = mc.transition_matrix
     expected_transition_matrix = np.array([
         [0, 2/3, 1/3, 0],
@@ -46,8 +46,8 @@ def test_markov_from_data():
     assert np.linalg.norm(transition_matrix - expected_transition_matrix) == 0.
 
     # Able to handle probabilities between [0,1].
-    data = [[0, 1, 1, 0, 1]]
-    mc = discrete_markov_chain(transition_data=data, num_states=2)
+    data = {0: [0, 1, 1, 0, 1]}
+    mc = discrete_markov_chain(raw_data=data, num_states=2)
     transition_matrix = mc.transition_matrix
     expected_transition_matrix = np.array([
         [0, 1],
@@ -58,7 +58,7 @@ def test_markov_from_data():
 
 def test_save_and_load_data():
     data = [0, 2, 2, 2]
-    mc = discrete_markov_chain(transition_data=data, num_states=3)
+    mc = discrete_markov_chain(raw_data={0: data}, num_states=3)
     filename = os.path.join(".", "test_markov_chain")
     mc.save_object(filename)
     mc2 = discrete_markov_chain(transition_matrix=np.array([[1.0]]))
@@ -166,7 +166,7 @@ def test_stationary_matrix():
 def test_entropy_rate():
     # Test trivial problem.
     data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    mc = discrete_markov_chain(transition_data=data, num_states=1)
+    mc = discrete_markov_chain(raw_data={0: data}, num_states=1)
     assert mc.is_irreducible()
     assert abs(mc.entropy_rate()) < 1e-12
 
@@ -188,7 +188,7 @@ def test_absolute_discounting():
     # Test on dense distribution.
     eps = 1e-4
     a = sparse.lil_matrix(np.array([[0.1, 0.5, 0.4]]))
-    mc = discrete_markov_chain(transition_data=[], num_states=1)
+    mc = discrete_markov_chain(raw_data={0: []}, num_states=1)
     out = mc.absolute_discount(a, eps)
     assert np.linalg.norm(a - out) < 1e-10
     # Test on sparse distribution.
@@ -206,8 +206,8 @@ def test_compare():
     B = np.eye(3)
     A_mc = discrete_markov_chain(transition_matrix=A)
     B_mc = discrete_markov_chain(transition_matrix=B)
-    diff_states, mean, std = A_mc.compare(B_mc)
-    assert diff_states == 0.
+    IoU, mean, std = A_mc.compare(B_mc)
+    assert IoU == 1.
     assert mean == 0.
     assert std == 0.
 
@@ -226,8 +226,8 @@ def test_compare():
     ])
     A_mc = discrete_markov_chain(transition_matrix=A)
     B_mc = discrete_markov_chain(transition_matrix=B)
-    diff_states, mean, std = A_mc.compare(B_mc)
-    assert diff_states == 1.
+    IoU, mean, std = A_mc.compare(B_mc)
+    assert IoU == 0.5
     eps = 1e-4
     A_expected_0 = np.array([
         [A[0, 0] - eps / 3, A[0, 1] - eps / 3, A[0, 2] - eps / 3, eps],
@@ -254,21 +254,21 @@ def test_compare():
 
 
 def test_add():
-    data1 = [[0, 0, 0, 0, 0],
-             [1, 2, 1, 2, 1, 2]]
+    data1 = {0: [0, 0, 0, 0, 0],
+             1: [1, 2, 1, 2, 1, 2]}
     num_states = 3
-    data2 = [[0, 0, 0, 0],
-             [2, 2, 2, 2]]
-    mc1 = discrete_markov_chain(transition_data=data1, num_states=num_states)
-    mc2 = discrete_markov_chain(transition_data=data2, num_states=num_states)
-    data3 = [[0, 1, 0, 1, 1, 1],
-             [1, 2, 0, 1, 2, 0]]
-    mc3 = discrete_markov_chain(transition_data=data3, num_states=num_states)
+    data2 = {2: [0, 0, 0, 0],
+             3: [2, 2, 2, 2]}
+    mc1 = discrete_markov_chain(raw_data=data1, num_states=num_states)
+    mc2 = discrete_markov_chain(raw_data=data2, num_states=num_states)
+    data3 = {4: [0, 1, 0, 1, 1, 1],
+             5: [1, 2, 0, 1, 2, 0]}
+    mc3 = discrete_markov_chain(raw_data=data3, num_states=num_states)
     mc4 = mc1 + mc2 + mc3
-    assert mc4.transition_data == data1 + data2 + data3
+    assert mc4.transition_data == list({**data1, **data2, **data3}.values())
 
 
 def test_dist():
-    mc = discrete_markov_chain(transition_data=[], num_states=1)
+    mc = discrete_markov_chain(raw_data={0: []}, num_states=1)
     assert mc._dist(4, 0) == 1
     assert mc._dist(3, 0) == 2
