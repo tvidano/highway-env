@@ -50,6 +50,7 @@ def experiment(start_seed, end_seed, shared_dict):
         "adaptive_observations": False,
         "constant_base_lidar": True,
         "base_lidar_frequency": 1.0,
+        "lanes_count": 4,
     })
 
     # Make agent
@@ -96,7 +97,7 @@ def experiment(start_seed, end_seed, shared_dict):
 if __name__ == "__main__":
     # Define data collection configuration.
     start_seed = 1_000
-    end_seed = 1_010
+    end_seed = 11_000
     num_processes = 10
     step = int((end_seed - start_seed) / num_processes)
 
@@ -124,5 +125,5 @@ if __name__ == "__main__":
     mc = discrete_markov_chain(
         raw_data=raw_data, num_states=2**16)
     mc.save_object(
-        f"2_lane_low_density_low_cars_{min(start_seeds)}_{max(end_seeds)}")
+        f"4_lane_low_density_low_cars_{min(start_seeds)}_{max(end_seeds)}")
     print(raw_data)

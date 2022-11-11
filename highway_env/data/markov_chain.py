@@ -197,6 +197,7 @@ class discrete_markov_chain(object):
         b_nonzero_rows = set(chain_b_matrix.nonzero()[0])
         a_union_b = a_nonzero_rows.union(b_nonzero_rows)
         a_intersect_b = a_nonzero_rows.intersection(b_nonzero_rows)
+        b_states_not_in_a = b_nonzero_rows - a_nonzero_rows
         # Compute row-wise kl divergence with absolute smoothing.
         kl_divs = []
         for row in a_intersect_b:
@@ -209,7 +210,7 @@ class discrete_markov_chain(object):
             a_row = self.absolute_discount(a_row[0, a_col_union_b_col], eps)
             b_row = self.absolute_discount(b_row[0, a_col_union_b_col], eps)
             kl_divs.append(np.sum(np.multiply(a_row, np.log2(a_row / b_row))))
-        return (len(a_intersect_b) / len(a_union_b), np.mean(kl_divs), np.std(kl_divs))
+        return (len(b_states_not_in_a) / len(a_union_b), np.mean(kl_divs), np.std(kl_divs))
 
     def entropy_rate(self) -> float:
         stationary_distribution = self.get_stationary_distribution()
