@@ -41,7 +41,20 @@ def convert_array_to_int(array):
 def convert_int_to_array(int):
     return f'{int:016b}'
 
-
+# Experiment: 11/15/2022 "4_lane_high_density_high_cars"
+# vehicles_density works initially but other vehicles quickly disperse.
+# modified IDMVehicle:
+#       COMFORT_ACC_MAX = 0.73 (from IDM paper)
+#       COMFORT_ACC_MIN = -1.67 (from IDM paper)
+#       DISTANCE_WANTED = 2 + ... (guessed from IDM paper)
+#       TIME_WANTED = 0.6 (to encourage vehicle density to last longer)
+#       LANE_CHANGE_DELAY = 2.0 (collisions were too frequent)
+# modified experiment params:
+#       duration = 15 (prevent ego_vehicle from leaving all other vehicles)
+#       vehicles_density = 3.0 (roughly the max before initializing with too
+#                               many collisions)
+#       vehicles_count = 30 (prevents ego_vehicle from leaving all other   
+#                            vehicles)
 def experiment(start_seed, end_seed, shared_dict):
     # Create and configure gym environment.
     env = gym.make("highway-lidar-v0")
@@ -51,6 +64,10 @@ def experiment(start_seed, end_seed, shared_dict):
         "constant_base_lidar": True,
         "base_lidar_frequency": 1.0,
         "lanes_count": 4,
+        "duration": 15, # use 15 s instead of 30 to prevent ego vehicle from
+                        # leaving all in the dust.
+        "vehicles_density": 3,
+        "vehicles_count": 30,
     })
 
     # Make agent
@@ -83,7 +100,7 @@ def experiment(start_seed, end_seed, shared_dict):
             #   * markov property
             #   * time-invariant
             state_record.append(obs_state)
-            # env.render()
+            env.render()
         shared_dict[seed] = state_record
         # exp_record.append(state_record)
     # print(f"unique states:\t{np.unique(exp_record)}")
@@ -97,7 +114,7 @@ def experiment(start_seed, end_seed, shared_dict):
 if __name__ == "__main__":
     # Define data collection configuration.
     start_seed = 1_000
-    end_seed = 11_000
+    end_seed = 1_010
     num_processes = 10
     step = int((end_seed - start_seed) / num_processes)
 
@@ -125,5 +142,5 @@ if __name__ == "__main__":
     mc = discrete_markov_chain(
         raw_data=raw_data, num_states=2**16)
     mc.save_object(
-        f"4_lane_low_density_low_cars_{min(start_seeds)}_{max(end_seeds)}")
+        f"4_lane_high_density_high_cars_{min(start_seeds)}_{max(end_seeds)}")
     print(raw_data)

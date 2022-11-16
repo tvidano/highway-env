@@ -21,16 +21,16 @@ class IDMVehicle(ControlledVehicle):
     ACC_MAX = 6.0  # [m/s2]
     """Maximum acceleration."""
 
-    COMFORT_ACC_MAX = 3.0  # [m/s2]
+    COMFORT_ACC_MAX = 0.73  # [m/s2]
     """Desired maximum acceleration."""
 
-    COMFORT_ACC_MIN = -5.0  # [m/s2]
+    COMFORT_ACC_MIN = -1.67  # [m/s2]
     """Desired maximum deceleration."""
 
-    DISTANCE_WANTED = 5.0 + ControlledVehicle.LENGTH  # [m]
+    DISTANCE_WANTED = 2.0 + ControlledVehicle.LENGTH  # [m]
     """Desired jam distance to the front vehicle."""
 
-    TIME_WANTED = 1.5  # [s]
+    TIME_WANTED = 0.6  # [s]
     """Desired time gap to the front vehicle."""
 
     DELTA = 4.0  # []
@@ -43,7 +43,7 @@ class IDMVehicle(ControlledVehicle):
     POLITENESS = 0.  # in [0, 1]
     LANE_CHANGE_MIN_ACC_GAIN = 0.2  # [m/s2]
     LANE_CHANGE_MAX_BRAKING_IMPOSED = 2.0  # [m/s2]
-    LANE_CHANGE_DELAY = 1.0  # [s]
+    LANE_CHANGE_DELAY = 2.0  # [s]
 
     def __init__(self,
                  road: Road,
