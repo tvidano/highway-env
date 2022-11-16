@@ -62,7 +62,7 @@ class discrete_markov_chain(object):
         self.transition_matrix = self._get_transition_matrix_from_data()
 
     @property
-    def transition_matrix(self) -> sparse.spmatrix:
+    def transition_matrix(self) -> sparse.csr_matrix:
         return self._transition_matrix
 
     @transition_matrix.setter
@@ -77,7 +77,8 @@ class discrete_markov_chain(object):
             transition_matrix.eliminate_zeros()
             self._transition_matrix = transition_matrix
         elif isinstance(transition_matrix, sparse.spmatrix):
-            transition_matrix.eliminate_zeros()
+            if hasattr(transition_matrix, "eliminate_zeros"):
+                transition_matrix.eliminate_zeros()
             self._transition_matrix = transition_matrix.asformat('csr')
 
     def get_stationary_distribution(
@@ -116,7 +117,6 @@ class discrete_markov_chain(object):
                 if Px.max() == 0:
                     index_sets.append(indices)
             n_components = len(index_sets)
-
             # Select the smallest connected component.
             sizes = [indices.size for indices in index_sets]
             min_i = np.argmin(sizes)
@@ -137,7 +137,7 @@ class discrete_markov_chain(object):
                 return np.array([1.0])
 
             P_minus_I = P - sparse.eye(n)
-            lhs = sparse.vstack([np.ones(n), P_minus_I.T[1:, :]])
+            lhs = sparse.vstack([np.ones(n), P_minus_I.T[1:, :]]).tocsc()
             # GMRES does not support rhs being sparse.spmatrix for some reason.
             rhs = np.zeros((n,))
             rhs[0] = 1
@@ -210,7 +210,9 @@ class discrete_markov_chain(object):
             a_row = self.absolute_discount(a_row[0, a_col_union_b_col], eps)
             b_row = self.absolute_discount(b_row[0, a_col_union_b_col], eps)
             kl_divs.append(np.sum(np.multiply(a_row, np.log2(a_row / b_row))))
-        return (len(b_states_not_in_a) / len(a_union_b), np.mean(kl_divs), np.std(kl_divs))
+        return (len(b_states_not_in_a) / len(a_union_b), 
+                np.mean(kl_divs), 
+                np.std(kl_divs))
 
     def entropy_rate(self) -> float:
         stationary_distribution = self.get_stationary_distribution()
@@ -221,26 +223,112 @@ class discrete_markov_chain(object):
         entropy_rate *= -1
         return entropy_rate
 
-    def simplify_matrix(self) -> np.ndarray:
+    def simplify_matrix(self) -> sparse.spmatrix:
         """Returns a matrix with unobserved states removed."""
-        nonzero_rows, nonzero_cols = self.transition_matrix.nonzero()
-        observed_rows = set(nonzero_rows)
-        observed_cols = set(nonzero_cols)
-        return (observed_rows, observed_cols)
+        # Convert to coo matrix for efficient access to row, col, data.
+        transition_matrix = self.transition_matrix.tocoo()
+        start_states = set(transition_matrix.row)
+        end_states = set(transition_matrix.col)
+        states_union = start_states.union(end_states)
+        states_intersection = start_states.intersection(end_states)
+        states_remainder = states_union - states_intersection
+        if len(states_remainder) == 0:
+            return (self.transition_matrix, {s:s for s in start_states})
+
+        # It's possible there are more rows than columns, but there shouldn't
+        # be more columns than rows.
+        assert len(end_states - start_states) == 0
+
+        # Discard the rows that are in excess. This only throws away the
+        # initial state of a scene, and this state is never revisited. While it
+        # is possible that two or more scenes are initialized in these states,
+        # the states are never revisited. They are negligible. It is also
+        # possible that removing states_remainder reveals new states that are
+        # never revisited, so we must call this function recursively.
+        max_iter = 1e3
+        iter = 0
+        while len(states_remainder) > 0 or iter > max_iter:
+            dense_transition_matrix = np.array(
+                [[r,c,d] for r, c, d in zip(transition_matrix.row, 
+                                            transition_matrix.col, 
+                                            transition_matrix.data) 
+                    if r not in states_remainder])
+            rows = dense_transition_matrix[:,0]
+            cols = dense_transition_matrix[:,1]
+            data = dense_transition_matrix[:,2]
+            start_states = set(rows)
+            end_states = set(cols)
+            states_union = start_states.union(end_states)
+            states_intersection = start_states.intersection(end_states)
+            states_remainder = states_union - states_intersection
+            iter += 1
+
+        # This process shouldn't remove more than 10% of all the states. If it
+        # does then the markov chain is likely truly irreducible and the user
+        # should use other methods to analyze.
+        assert len(data) / len(transition_matrix.data) > 0.9, \
+            "More than 10%% of states are removed."
+
+        # Map cols, rows to [0 -> len(rows)].
+        state_mapping = {state: i for i, state in enumerate(
+            sorted(start_states))}
+        mapped_rows = np.vectorize(state_mapping.__getitem__)(rows)
+        mapped_cols = np.vectorize(state_mapping.__getitem__)(cols)
+        transition_matrix = sparse.coo_matrix(
+            (data, (mapped_rows, mapped_cols)), dtype=np.float64)
+        return (transition_matrix.tocsr(), state_mapping)
 
     def is_irreducible(self, transition_matrix=None):
         if transition_matrix is None:
             transition_matrix = self.transition_matrix
+        # Quick check to see if there are any absorbing states.
+        ij = range(transition_matrix.shape[0])
+        diag = transition_matrix[ij,ij]
+        if (diag == 1).sum() != 0:
+            return False
+
+        # Continue with more involved method.
         n_components = sparse.csgraph.connected_components(
             transition_matrix, directed=True, connection='strong',
             return_labels=False)
         return n_components == 1
 
     def get_irreducible_matrix(self):
-        transition_matrix = self.transition_matrix
-        assert self.is_irreducible(transition_matrix), \
-            "Markov chain has more than 1 strongly connected components."
-        return transition_matrix
+        if self.is_irreducible():
+            return (self.transition_matrix, 
+                    {s:s for s in range(self.transition_matrix.shape[0])})
+        transition_matrix, state_map = self.simplify_matrix()
+        transition_matrix = self.smooth_absorbing_states(transition_matrix)
+        return (transition_matrix, state_map)
+
+
+    def smooth_absorbing_states(self, 
+            transition_matrix:Optional[sparse.spmatrix]=None,
+            eps:Optional[float]=1e-4) -> sparse.csr_matrix:
+        """
+        Identifies any absorbing states and eliminates them by subtracting
+        |eps| from the diagonal term in the transition matrix and adding |eps|
+        / number of obversed close states. Inspired by absolute discounting.
+        """
+        # Use lil_matrix for efficient indexing and change of sparsity.
+        if transition_matrix is None:
+            transition_matrix = self.transition_matrix.tolil()
+        if not isinstance(transition_matrix, sparse.lil_matrix):
+            transition_matrix = transition_matrix.tolil()
+        # Check if there are any absorbing states.
+        ij = range(transition_matrix.shape[0])
+        diag = transition_matrix[ij,ij]
+        if (diag == 1).sum() == 0:
+            return transition_matrix.tocsr()
+        # Find absorbing states.
+        absorbing_states = (diag == 1).nonzero()[1]
+        observed_states = np.unique(transition_matrix.nonzero()[1])
+        for state in absorbing_states:
+            transition_matrix[state, observed_states] += \
+                eps / len(observed_states) * np.ones(len(observed_states))
+            transition_matrix[state, state] -= eps
+        assert (transition_matrix[ij,ij] == 1).sum() == 0
+        return transition_matrix.tocsr()
 
     def save_object(self,
                     filename: str):
@@ -297,12 +385,13 @@ class discrete_markov_chain(object):
     def _remove_unobserved_states(self, frequency_matrix):
         """
         It is possible that the data ends on a state that has never been seen
-        before. This will cause the column corresponding to that state to be
-        nonzero, but the row will be zero. When simulating this transition
-        matrix, this can cause problems. We can either make this an absorbing
-        state, remove the observation, or make some assumption about the next
-        state. For now, we assume the next state is a distance 1 from the
-        current state.
+        before. This will cause the transition matrix column corresponding to
+        that state to benonzero, but the row will be zero. When simulating
+        this transition matrix, this can cause problems. We can either makes
+        this an absorbing state, remove the observation, or make some
+        assumption about the next state. For now, we find the closest states
+        that have been previously visited and assume that they are the next
+        states. We evenly distribute transitions to these states
 
         It is possible that the data starts on a state that is never seen
         again. This will cause the column corresponding to that state to be
