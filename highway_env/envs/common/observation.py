@@ -756,7 +756,10 @@ class AdaptiveLidarObservation(LidarObservation):
                 direction = self.index_to_direction(index)
                 ray = [origin, origin + self.maximum_range * direction]
                 distance = utils.distance_to_rect(ray, corners)
-                position = origin + distance * direction
+                # Catch inf * [1, 0] overflow.
+                position = origin + distance * direction \
+                    if np.linalg.norm(direction - np.array([1,0])) > 1e-10 \
+                    else origin + distance
                 if distance <= self.grid[index, self.DISTANCE]:
                     velocity = (obstacle.velocity -
                                 origin_velocity).dot(direction)
