@@ -55,6 +55,18 @@ def convert_int_to_array(int):
 #                               many collisions)
 #       vehicles_count = 30 (prevents ego_vehicle from leaving all other   
 #                            vehicles)
+# Experiment: 11/17/2022 "2_lane_low_density"
+# The frequency of scenes in which the ego vehicle makes it into open road
+# is too great.
+# modified HighwayEnvLidar to add _cycle_vehicles().
+#       this now cycles vehicles whenever a vehicle passes the ego-vehicle
+#       or whenever the ego-vehicle passes. 
+# experiment params:
+#       lanes_count = 2
+#       duration = 30
+#       vehicles_density = 1
+#       vehicles_count = 10
+# 
 def experiment(start_seed, end_seed, shared_dict):
     # Create and configure gym environment.
     env = gym.make("highway-lidar-v0")
@@ -63,11 +75,10 @@ def experiment(start_seed, end_seed, shared_dict):
         "adaptive_observations": False,
         "constant_base_lidar": True,
         "base_lidar_frequency": 1.0,
-        "lanes_count": 4,
-        "duration": 15, # use 15 s instead of 30 to prevent ego vehicle from
-                        # leaving all in the dust.
-        "vehicles_density": 3,
-        "vehicles_count": 30,
+        "lanes_count": 2,
+        "duration": 30, 
+        "vehicles_density": 1,
+        "vehicles_count": 10,
     })
 
     # Make agent
@@ -80,9 +91,6 @@ def experiment(start_seed, end_seed, shared_dict):
     }
     agent = agent_factory(env, agent_config)
 
-    # start_seed = 100_000
-    # end_seed = 100_010
-    exp_record = []
     for seed in tqdm(range(start_seed, end_seed + 1)):
         print(f"seed:{seed}")
         terminated, truncated = False, False
@@ -100,26 +108,20 @@ def experiment(start_seed, end_seed, shared_dict):
             #   * markov property
             #   * time-invariant
             state_record.append(obs_state)
-            env.render()
+            # env.render()
         shared_dict[seed] = state_record
-        # exp_record.append(state_record)
-    # print(f"unique states:\t{np.unique(exp_record)}")
-    # mc = discrete_markov_chain(
-    #     transition_data=exp_record, num_states=num_states)
-    # print(f"irreducible? {mc.is_irreducible()}")
-    # mc.save_object(op.join(".", f"{start_seed}_{end_seed}"))
     env.close()
 
 
 if __name__ == "__main__":
     # Define data collection configuration.
     start_seed = 1_000
-    end_seed = 1_010
-    num_processes = 10
+    end_seed = 11_000
+    num_processes = 11
     step = int((end_seed - start_seed) / num_processes)
 
     # Get ranges for each process.
-    start_seeds = np.arange(start_seed, end_seed, step)
+    start_seeds = np.arange(start_seed, end_seed - step, step)
     end_seeds = np.arange(start_seed - 1 + step, end_seed, step)
     assert len(start_seeds) == len(end_seeds) == num_processes
     raw_data = {}
@@ -142,5 +144,5 @@ if __name__ == "__main__":
     mc = discrete_markov_chain(
         raw_data=raw_data, num_states=2**16)
     mc.save_object(
-        f"4_lane_high_density_high_cars_{min(start_seeds)}_{max(end_seeds)}")
-    print(raw_data)
+        f"2_lane_low_density_{min(start_seeds)}_{max(end_seeds)}")
+    #print(raw_data)
