@@ -91,7 +91,7 @@ class Vehicle(RoadObject):
             np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
         if add_backwards:
             x0 = np.min([lane.local_coordinates(v.position)[0]
-                        for v in road.vehicles])
+                        for v in road.vehicles if not v.crashed])
             x0 -= offset * road.np_random.uniform(0.9, 1.1)
         else:
             x0 = np.max([lane.local_coordinates(v.position)[0]

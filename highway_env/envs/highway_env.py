@@ -184,6 +184,10 @@ class HighwayEnvLidar(HighwayEnv):
     """
 
     def __init__(self, config: dict = None) -> None:
+        # Used to rotate vehicles so that the ego-vehicle never passes all 
+        # vehicles or gets passed by all vehicles.
+        self.vehicles_behind_count = 0
+        self.vehicles_in_front_count = 0
         super().__init__(config)
         self.lidar_buffer = np.ones((16, 4)) * np.inf  # stored lidar points:
         #    0: radial distance
@@ -245,6 +249,9 @@ class HighwayEnvLidar(HighwayEnv):
             "reward_speed_range": [20, 40],
             "smooth_driving_reward": 1.0,   # The reward received when IDLE is
                                             # chosen.
+            # Visualization related settings.
+            "screen_width": 1000,  # [px]
+            "centering_position": [0.5, 0.5], # [px]
         })
         return cfg
 
@@ -256,6 +263,9 @@ class HighwayEnvLidar(HighwayEnv):
         self.obs_step = 0
         self.indexes_to_update = []
 
+        _ = self._update_passed_vehicles()
+        _ = self._update_passing_vehicles()
+
     def _create_road(self) -> None:
         """Create a road composed of straight adjacent lanes."""
         self.road = Road(
@@ -264,6 +274,23 @@ class HighwayEnvLidar(HighwayEnv):
                 speed_limit=self.config["road_speed_limit"]),
             np_random=self.np_random,
             record_history=self.config["show_trajectories"])
+
+    def _change_vehicle_type(self, vehicle: Vehicle, type: str) -> None:
+        """Changes the vehicle to a specific type of vehicle."""
+        f150_width, f150_length = 2.2, 6.0
+        big_rig_width, big_rig_length = 2.6, 18.0
+        if type == "truck":
+            vehicle.LENGTH = f150_length
+            vehicle.WIDTH = f150_width
+            vehicle.diagonal = np.sqrt(f150_width**2 + f150_length**2)
+        elif type == "semi":
+            vehicle.LENGTH = big_rig_length
+            vehicle.DISTANCE_WANTED = self.vehicle.LENGTH * \
+                2 + big_rig_length / 2
+            vehicle.WIDTH = big_rig_width
+            vehicle.diagonal = np.sqrt(
+                big_rig_length**2 + big_rig_width**2)
+
 
     def _distribute_vehicle_types(self):
         """
@@ -274,8 +301,6 @@ class HighwayEnvLidar(HighwayEnv):
         assert sum(vehicle_types.values()) == 1.0, \
             "the distribution of vehicle types must total 1.0."
         vehicles = self.road.vehicles[1:]
-        f150_width, f150_length = 2.2, 6.0
-        big_rig_width, big_rig_length = 2.6, 18.0
         vehicle_index = np.arange(len(vehicles))
         self.np_random.shuffle(vehicle_index)
         num_sedans = round(vehicle_types["sedan"] * len(vehicles))
@@ -283,27 +308,20 @@ class HighwayEnvLidar(HighwayEnv):
         truck_indices = vehicle_index[num_sedans:num_sedans + num_trucks]
         semi_indices = vehicle_index[num_sedans + num_trucks:]
         for i in truck_indices:
-            vehicles[i].LENGTH = f150_length
-            vehicles[i].WIDTH = f150_width
-            vehicles[i].diagonal = np.sqrt(f150_width**2 + f150_length**2)
+            self._change_vehicle_type(vehicles[i], "truck")
         # List semi_indices by vehicle location in decreasing x position.
         sorted_semi_indices = sorted(
             semi_indices, key=lambda i: vehicles[i].position[0], reverse=True)
         # Create semi trucks by modifying existing vehicles.
         for i in sorted_semi_indices:
             # Change vehicle parameters and goals to model a semi truck.
-            vehicles[i].LENGTH = big_rig_length
-            vehicles[i].DISTANCE_WANTED = self.vehicle.LENGTH * \
-                2 + big_rig_length / 2
-            vehicles[i].WIDTH = big_rig_width
-            vehicles[i].diagonal = np.sqrt(
-                big_rig_length**2 + big_rig_width**2)
+            self._change_vehicle_type(vehicles[i], "semi")
             # Move semi trucks so they are 2 other car lengths away from other
             # vehicles so not initialized in a collision.
             front_vehicle, rear_vehicle = vehicles[i].road.neighbour_vehicles(
                 vehicles[i], vehicles[i].lane_index)
-            # If semi is initialized too close to the vehicle in front, move all
-            # vehicles in that lane behind the front vehicle back.
+            # If semi is initialized too close to the vehicle in front, move
+            # all vehicles in that lane behind the front vehicle back.
             safe_distance = vehicles[i].LENGTH / 2. + self.vehicle.LENGTH * 2.5
             if front_vehicle and \
                     front_vehicle.position[0] - vehicles[i].position[0] <= \
@@ -431,6 +449,110 @@ class HighwayEnvLidar(HighwayEnv):
         # 5. return that distance.
         return closest_distance
 
+    def _update_passed_vehicles(self) -> int:
+        """Returns the number of vehicles passed since last called."""
+        # Get the longitudinal position of the ego-vehicle and other vehicles.
+        other_x_pos = [vehicle.position[0] for vehicle in 
+                       self.road.vehicles[1:]]
+        ego_x_pos = self.vehicle.position[0]
+
+        # Compute the number of vehicle's passed.
+        vehicles_behind_count = sum(other_x_pos < ego_x_pos)
+        newly_passed = vehicles_behind_count - self.vehicles_behind_count
+        self.vehicles_behind_count = vehicles_behind_count
+        return newly_passed
+
+    def _update_passing_vehicles(self) -> int:
+        """Returns the number of vehicles that have passed since last
+        called."""
+        # Get the longitudinal position of the ego-vehicle and other vehicles.
+        other_x_pos = [vehicle.position[0] for vehicle in 
+                       self.road.vehicles[1:]]
+        ego_x_pos = self.vehicle.position[0]
+
+        # Compute the number of vehicle's passed.
+        vehicles_in_front_count = sum(other_x_pos > ego_x_pos)
+        newly_passing = vehicles_in_front_count - self.vehicles_in_front_count
+        self.vehicles_in_front_count = vehicles_in_front_count
+        return newly_passing
+
+    def _cycle_vehicles(self) -> None:
+        """
+        If the ego vehicle passes one or more cars, the number of cars that
+        are passed are removed from the road in order of the most rear-ward 
+        and are replaced ahead of the forward-most vehicle. The inverse is
+        applied for vehicles that pass the ego-vehicle.
+        """
+        # Get the number of cars needed to be cycled.
+        vehicles_to_cycle_fwd_count = self._update_passed_vehicles()
+        vehicles_to_cycle_bwd_count = self._update_passing_vehicles()
+
+        # Move vehicles from behind to the front.
+        other_vehicles_type = utils.class_from_path(
+            self.config["other_vehicles_type"])
+        other_x_pos = [vehicle.position[0] for vehicle in 
+                       self.road.vehicles[1:] if not vehicle.crashed]
+        while vehicles_to_cycle_fwd_count > 0 \
+                and self.vehicles_behind_count > 1:
+            vehicles_to_cycle_fwd_count -= 1
+            # Remove the last vehicle from the road.
+            i_min = np.argmin(other_x_pos) + 1
+            self.road.vehicles.pop(i_min)
+
+            # Add a new vehicle.
+            vehicle = other_vehicles_type.create_random(
+                self.road, spacing=1 / self.config["vehicles_density"])
+            vehicle.target_speeds = self.config["vehicle_speeds"]
+            vehicle.randomize_behavior()
+            self.road.vehicles.append(vehicle)
+
+            # Adjust vehicle type according to vehicle type distribution.
+            type_dist = self.config["vehicle_type_distribution"]
+            new_type = self.np_random.choice(["sedan", "truck", "semi"], 
+                p=[type_dist["sedan"], type_dist["truck"], type_dist["semi"]])
+            self._change_vehicle_type(vehicle, new_type)
+            _ = self._update_passing_vehicles()
+
+            # Adjust vehicle position so it isn't initialized in a collision.
+            i_max = np.argmax(other_x_pos) + 1
+            front_vehicle = self.road.vehicles[i_max]
+            safe_dist = vehicle.LENGTH / 2. + front_vehicle.LENGTH / 2. + \
+                vehicle.LENGTH * 2.
+            if vehicle.position[0] - front_vehicle.position[0] <= safe_dist:
+                vehicle.position[0] += safe_dist
+
+        # Move vehicles from front to back.
+        while vehicles_to_cycle_bwd_count > 0 and \
+                self.vehicles_in_front_count > 1:
+            vehicles_to_cycle_bwd_count -= 1
+            # Remove the front vehicle from the road.
+            i_min = np.argmax(other_x_pos)
+            self.road.vehicles.pop(i_min + 1)
+
+            # Add a new vehicle.
+            vehicle = other_vehicles_type.create_random(
+                self.road, spacing=1 / self.config["vehicles_density"], 
+                add_backwards=True)
+            vehicle.target_speeds = self.config["vehicle_speeds"]
+            vehicle.randomize_behavior()
+            self.road.vehicles.append(vehicle)
+
+            # Adjust vehicle type according to vehicle type distribution.
+            type_dist = self.config["vehicle_type_distribution"]
+            new_type = self.np_random.choice(["sedan", "truck", "semi"], 
+                p=[type_dist["sedan"], type_dist["truck"], type_dist["semi"]])
+            self._change_vehicle_type(vehicle, new_type)
+            _ = self._update_passed_vehicles()
+
+            # Adjust vehicle position so it isn't initialized in a collision.
+            i_min = np.argmin(other_x_pos) + 1
+            rear_vehicle = self.road.vehicles[i_min]
+            safe_dist = vehicle.LENGTH / 2. + rear_vehicle.LENGTH / 2. + \
+                vehicle.LENGTH * 2.
+            if vehicle.position[0] - rear_vehicle.position[0] <= safe_dist:
+                vehicle.position[0] -= safe_dist
+
+
     def step(self, action: Action) -> \
             Tuple[Observation, float, bool, bool, dict]:
         """
@@ -451,6 +573,7 @@ class HighwayEnvLidar(HighwayEnv):
         if action is not None and not self.config["manual_control"]:
             self.action_type.act(action)
         self._simulate(action)
+        self._cycle_vehicles()
 
         obs = self.lidar_buffer
         reward = self._reward(action)
