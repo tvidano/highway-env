@@ -233,7 +233,20 @@ class discrete_markov_chain(object):
         states_intersection = start_states.intersection(end_states)
         states_remainder = states_union - states_intersection
         if len(states_remainder) == 0:
-            return (self.transition_matrix, {s:s for s in start_states})
+            dense_transition_matrix = np.array(
+                [[r,c,d] for r, c, d in zip(transition_matrix.row, 
+                                            transition_matrix.col, 
+                                            transition_matrix.data)])
+            rows = dense_transition_matrix[:,0]
+            cols = dense_transition_matrix[:,1]
+            data = dense_transition_matrix[:,2]
+            state_mapping = {state: i for i, state in enumerate(
+                sorted(start_states))}
+            mapped_rows = np.vectorize(state_mapping.__getitem__)(rows)
+            mapped_cols = np.vectorize(state_mapping.__getitem__)(cols)
+            transition_matrix = sparse.coo_matrix(
+                (data, (mapped_rows, mapped_cols)), dtype=np.float64)
+            return (transition_matrix, state_mapping)
 
         # It's possible there are more rows than columns, but there shouldn't
         # be more columns than rows.
@@ -300,7 +313,6 @@ class discrete_markov_chain(object):
         transition_matrix, state_map = self.simplify_matrix()
         transition_matrix = self.smooth_absorbing_states(transition_matrix)
         return (transition_matrix, state_map)
-
 
     def smooth_absorbing_states(self, 
             transition_matrix:Optional[sparse.spmatrix]=None,

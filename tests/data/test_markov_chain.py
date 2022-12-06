@@ -170,7 +170,6 @@ def test_entropy_rate():
     # Test trivial problem.
     data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     mc = discrete_markov_chain(raw_data={0: data}, num_states=1)
-    assert mc.is_irreducible()
     assert abs(mc.entropy_rate()) < 1e-12
 
     # Test entropy rate calculation for simple chain.
@@ -209,8 +208,8 @@ def test_compare():
     B = np.eye(3)
     A_mc = discrete_markov_chain(transition_matrix=A)
     B_mc = discrete_markov_chain(transition_matrix=B)
-    IoU, mean, std = A_mc.compare(B_mc)
-    assert IoU == 1.
+    B_AoU, mean, std = A_mc.compare(B_mc)
+    assert B_AoU == 0.
     assert mean == 0.
     assert std == 0.
 
@@ -229,8 +228,8 @@ def test_compare():
     ])
     A_mc = discrete_markov_chain(transition_matrix=A)
     B_mc = discrete_markov_chain(transition_matrix=B)
-    IoU, mean, std = A_mc.compare(B_mc)
-    assert IoU == 0.5
+    B_Aou, mean, std = A_mc.compare(B_mc)
+    assert B_Aou == 0.25
     eps = 1e-4
     A_expected_0 = np.array([
         [A[0, 0] - eps / 3, A[0, 1] - eps / 3, A[0, 2] - eps / 3, eps],
