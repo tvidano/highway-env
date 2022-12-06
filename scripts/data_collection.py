@@ -67,6 +67,13 @@ def convert_int_to_array(int):
 #       vehicles_density = 1
 #       vehicles_count = 10
 # 
+# Experiment: 11/21/2022 "4_lane_low_density"
+# experiment params:
+#       lanes_count = 4
+#       duration = 30
+#       vehicles_density = 1
+#       vehicles_count = 10
+#
 def experiment(start_seed, end_seed, shared_dict):
     # Create and configure gym environment.
     env = gym.make("highway-lidar-v0")
@@ -77,8 +84,8 @@ def experiment(start_seed, end_seed, shared_dict):
         "base_lidar_frequency": 1.0,
         "lanes_count": 2,
         "duration": 30, 
-        "vehicles_density": 1,
-        "vehicles_count": 10,
+        "vehicles_density": 2,
+        "vehicles_count": 20,
     })
 
     # Make agent
