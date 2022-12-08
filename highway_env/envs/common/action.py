@@ -9,7 +9,7 @@ from highway_env.utils import Vector
 from highway_env.vehicle.behavior import IDMVehicle
 from highway_env.vehicle.dynamics import BicycleVehicle
 from highway_env.vehicle.kinematics import Vehicle
-from highway_env.vehicle.controller import MDPVehicle
+from highway_env.vehicle.controller import MDPVehicle, CyclicMDPVehicle
 
 if TYPE_CHECKING:
     from highway_env.envs.common.abstract import AbstractEnv
@@ -265,6 +265,14 @@ class DiscreteMetaAction(ActionType):
             actions.append(self.actions_indexes['SLOWER'])
         return actions
 
+class DiscreteMetaActionCyclic(DiscreteMetaAction):
+
+    """A DiscreteMetaAction using CyclicMDPVehicle instead of MDPVehicle."""
+
+    # Override DiscreteMetaAction's vehicle_class().
+    @property
+    def vehicle_class(self) -> Callable:
+        return functools.partial(CyclicMDPVehicle, target_speeds=self.target_speeds)
 
 class MultiAgentAction(ActionType):
     def __init__(self,
@@ -302,6 +310,8 @@ def action_factory(env: 'AbstractEnv', config: dict) -> ActionType:
         return DiscreteAction(env, **config)
     elif config["type"] == "DiscreteMetaAction":
         return DiscreteMetaAction(env, **config)
+    elif config["type"] == "DiscreteMetaActionCyclic":
+        return DiscreteMetaActionCyclic(env, **config)
     elif config["type"] == "MultiAgentAction":
         return MultiAgentAction(env, **config)
     else:

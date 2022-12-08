@@ -1,4 +1,4 @@
-from typing import Tuple, Union
+from typing import Tuple, TYPE_CHECKING, Union
 
 import numpy as np
 
@@ -6,8 +6,11 @@ from highway_env.road.road import Road, Route, LaneIndex
 from highway_env.utils import Vector
 from highway_env.vehicle.controller import ControlledVehicle
 from highway_env import utils
-from highway_env.vehicle.kinematics import Vehicle
+from highway_env.vehicle.kinematics import CyclicVehicle, Vehicle
 
+if TYPE_CHECKING:
+    from highway_env.vehicle.objects import RoadObject
+    from highway_env.road.lane import AbstractLane
 
 class IDMVehicle(ControlledVehicle):
     """
@@ -27,10 +30,10 @@ class IDMVehicle(ControlledVehicle):
     COMFORT_ACC_MIN = -1.67  # [m/s2]
     """Desired maximum deceleration."""
 
-    DISTANCE_WANTED = 2.0 + ControlledVehicle.LENGTH  # [m]
+    DISTANCE_WANTED = 2.0  # [m]
     """Desired jam distance to the front vehicle."""
 
-    TIME_WANTED = 0.6  # [s]
+    TIME_WANTED = 1.6  # [s]
     """Desired time gap to the front vehicle."""
 
     DELTA = 4.0  # []
@@ -273,6 +276,57 @@ class IDMVehicle(ControlledVehicle):
                 # Reverse
                 return -self.COMFORT_ACC_MAX / 2
         return acceleration
+
+class CyclicIDMVehicle(IDMVehicle, CyclicVehicle):
+
+    """An IDMVehicle that is designed to drive on a cyclic road, where the
+    vehicles cycle from front to back or vice versa depending on their distance
+    to the controlled vehicle."""
+
+    # Override IDMVehicle's act().
+    def act(self, action: Union[dict, str] = None):
+        """
+        Execute an action.
+
+        For now, no action is supported because the vehicle takes all decisions
+        of acceleration and lane changes on its own, based on the IDM and MOBIL
+        models. Modified from IDMVehicle so that there is always a preceding
+        and following vehicle as per the cyclic road unless there is self is 
+        the only vehicle in the lane.
+
+        :param action: the action
+        """
+        if self.crashed:
+            return
+        action = {}
+        # Lateral: MOBIL
+        self.follow_road()
+        if self.enable_lane_change:
+            self.change_lane_policy()
+        action['steering'] = self.steering_control(self.target_lane_index)
+        action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
+
+        # Longitudinal: IDM
+        front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self, self.lane_index)
+        front_most_vehicle, rear_most_vehicle = \
+            self._get_edge_vehicles(self.lane_index)
+        if front_vehicle is None:
+            front_vehicle = rear_most_vehicle
+        if rear_vehicle is None:
+            rear_vehicle = front_most_vehicle
+        action['acceleration'] = self.acceleration(ego_vehicle=self,
+                                                   front_vehicle=front_vehicle,
+                                                   rear_vehicle=rear_vehicle)
+        # When changing lane, check both current and target lanes
+        if self.lane_index != self.target_lane_index:
+            front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self, self.target_lane_index)
+            target_idm_acceleration = self.acceleration(ego_vehicle=self,
+                                                        front_vehicle=front_vehicle,
+                                                        rear_vehicle=rear_vehicle)
+            action['acceleration'] = min(action['acceleration'], target_idm_acceleration)
+        # action['acceleration'] = self.recover_from_stop(action['acceleration'])
+        action['acceleration'] = np.clip(action['acceleration'], -self.ACC_MAX, self.ACC_MAX)
+        Vehicle.act(self, action)  # Skip ControlledVehicle.act(), or the command will be overriden.
 
 
 class LinearVehicle(IDMVehicle):

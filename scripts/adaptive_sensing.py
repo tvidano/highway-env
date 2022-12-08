@@ -129,10 +129,35 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 env = gym.make("highway-lidar-v0")
 # env = RecordVideo(env, "videos")
+# Road length = 150 m
+# vehicles per road = 5 + 1 veh
+# average vehicle velocity = 25 m/s
+# vehicles per day = 6 [veh] * 25 [m/s] / 150 [m] * 86,400 [s/day] = 86,400 veh/day
+# CA Annual average daily traffic can be between 50-80k for peaks.
+
+"""
+Waymo uses cars to localize weather patterns. Because weather is so important
+to them for deployment, the sparse weather stations throughout cities is not
+granular enough data for them. Insteady they use each AV like a mobile weather
+station, enabling localized weather pattern detection and prediction.
+
+Similar to this, we can model localized traffic with AVs. AVs only need to
+observe the cars around them to measure the local traffic density, volumen,
+flow, or any other parameter that is of interest. However, this is only
+marginally useful. What if AV companies could characterize ODDs based on some
+parameters of traffic models, and as some roads become more dangerous
+throughout the day, the AVs select alternate routes. The question becomes how
+to model the localized traffic in a way that closely couples the danger to the
+AV? Why not a radial occupancy grid? What about a cartesian occupancy grid?
+"""
 env.configure({
     "adaptive_observations": False,
     "constant_base_lidar": True,
+    "base_lidar_frequency": 1.0,
+    "vehicles_count": 5,
+    "vehicles_density": 1/3,
 })
+seed = 100_000
 
 # Make agent
 agent_config = {
@@ -147,23 +172,11 @@ agent = agent_factory(env, agent_config)
 # env.start_video_recorder()
 action_dict = env.action_type.ACTIONS_ALL
 terminated, truncated = False, False
-obs = env.reset(seed=111_111)
+obs = env.reset(seed=seed)
 lidar_count = 0
 while not truncated and not terminated:
     action = agent.act(obs)
     obs, reward, terminated, truncated, info = env.step(action)
-    #print(f"last Observation: {obs}")
-    closest_car = env.find_closest_obstacle()
-    print(f"{env.lidar_count - lidar_count} new lidar points")
-    lidar_count = env.lidar_count
-    print(f"Closest: \t {closest_car:.2f} m away.")
-    print(f"action: \t {action_dict[action]}")
-    print(f"reward: \t {reward:.2f}")
-    print(f'\t \t {env.get_reward_breakdown(action)}')
-    print(f"crashed: \t{env.vehicle.crashed}")
-    # Index is clockwise.
-    print(f"lidar: \t {env.lidar_buffer[:,0]}")
-    print(f"time: \t{env.time}")
     env.render()
 env.close()
 # env.close_video_recorder()

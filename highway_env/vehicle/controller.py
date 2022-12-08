@@ -5,7 +5,7 @@ import copy
 from highway_env import utils
 from highway_env.road.road import Road, LaneIndex, Route
 from highway_env.utils import Vector
-from highway_env.vehicle.kinematics import Vehicle
+from highway_env.vehicle.kinematics import CyclicVehicle, Vehicle
 
 
 class ControlledVehicle(Vehicle):
@@ -313,3 +313,8 @@ class MDPVehicle(ControlledVehicle):
                 if (t % int(trajectory_timestep / dt)) == 0:
                     states.append(copy.deepcopy(v))
         return states
+
+
+class CyclicMDPVehicle(MDPVehicle, CyclicVehicle):
+
+    """An MDP Vehicle that cycles within a defined road segment."""

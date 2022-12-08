@@ -1,4 +1,4 @@
-from typing import Union, Optional, Tuple, List
+from typing import List, Optional, Tuple, TYPE_CHECKING, Union
 import numpy as np
 import copy
 from collections import deque
@@ -8,7 +8,9 @@ from highway_env.road.road import Road, LaneIndex
 from highway_env.vehicle.objects import RoadObject, Obstacle, Landmark
 from highway_env.utils import Vector
 
-
+if TYPE_CHECKING:
+    from highway_env.vehicle.objects import RoadObject
+    from highway_env.road.lane import AbstractLane
 class Vehicle(RoadObject):
 
     """
@@ -57,18 +59,15 @@ class Vehicle(RoadObject):
         """
         Create a random vehicle on the road.
 
-        The lane and /or speed are chosen randomly, while longitudinal position
-        is chosen behind the last vehicle in the road with density based on the
-        number of lanes.
+        The lane and /or speed are chosen randomly, while longitudinal position is chosen behind the last
+        vehicle in the road with density based on the number of lanes.
 
         :param road: the road where the vehicle is driving
         :param speed: initial speed in [m/s]. If None, will be chosen randomly
         :param lane_from: start node of the lane to spawn in
         :param lane_to: end node of the lane to spawn in
         :param lane_id: id of the lane to spawn in
-        :param spacing: ratio of spacing to the front vehicle, 1 being the 
-            default
-        :param add_backwards: if True, adds a vehicle behind all other vehicles.
+        :param spacing: ratio of spacing to the front vehicle, 1 being the default
         :return: A vehicle with random position and/or speed
         """
         _from = lane_from or road.np_random.choice(
@@ -87,17 +86,10 @@ class Vehicle(RoadObject):
                     Vehicle.DEFAULT_INITIAL_SPEEDS[0],
                     Vehicle.DEFAULT_INITIAL_SPEEDS[1])
         default_spacing = 12+1.0*speed
-        offset = spacing * default_spacing * \
-            np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
-        if add_backwards:
-            x0 = np.min([lane.local_coordinates(v.position)[0]
-                        for v in road.vehicles if not v.crashed])
-            x0 -= offset * road.np_random.uniform(0.9, 1.1)
-        else:
-            x0 = np.max([lane.local_coordinates(v.position)[0]
-                         for v in road.vehicles]) \
-                if len(road.vehicles) else 3*offset
-            x0 += offset * road.np_random.uniform(0.9, 1.1)
+        offset = spacing * default_spacing * np.exp(-5 / 40 * len(road.network.graph[_from][_to]))
+        x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
+            if len(road.vehicles) else 3*offset
+        x0 += offset * road.np_random.uniform(0.9, 1.1)
         v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)
         return v
 
@@ -260,3 +252,180 @@ class Vehicle(RoadObject):
 
     def __repr__(self):
         return self.__str__()
+
+class CyclicVehicle(Vehicle):
+
+    """A kinematic vehicle that when past the road edge, will restart at the
+    road origin."""
+
+    ROAD_EDGE = 150 # [m]
+    """ The maximum x position for a vehicle on the highway_env. """
+
+    def __init__(self,
+                 road: Road,
+                 position: Vector,
+                 heading: float = 0,
+                 speed: float = 0,
+                 predition_type: str = 'constant_steering'):
+        super().__init__(road, position, heading, speed, predition_type)
+        # Create imaginary vehicles past the edges of the road to support
+        # different kinds of observations.
+        imaginary_position = np.array([self.position[0] + self.ROAD_EDGE, 
+                                       self.position[1]])
+        self.front_mirrored_vehicle = RoadObject(self.road, imaginary_position)
+        self.front_mirrored_vehicle.LENGTH = self.LENGTH
+        self.front_mirrored_vehicle.WIDTH = self.WIDTH
+        self.road.objects.append(self.front_mirrored_vehicle)
+        imaginary_position = np.array([self.position[0] - self.ROAD_EDGE,
+                                       self.position[1]])
+        self.rear_mirrored_vehicle = RoadObject(self.road, imaginary_position)
+        self.rear_mirrored_vehicle.LENGTH = self.LENGTH
+        self.rear_mirrored_vehicle.WIDTH = self.WIDTH
+        self.road.objects.append(self.rear_mirrored_vehicle)
+
+    # Override RoadObject's lane_distance_to
+    def lane_distance_to(self, other: 'CyclicVehicle',
+            lane: 'AbstractLane' = None) -> float:
+        """
+        Compute the signed distance to another object along as per the cyclic
+        road type.
+
+        :param other: the other object
+        :param lane: a lane
+        :return: the distance to the other other [m]
+        """
+        if other is None:
+            return np.nan
+        if lane is None:
+            lane = self.lane
+        front_most_vehicle, rear_most_vehicle = \
+            self._get_edge_vehicles(self.lane_index)
+        if (self is front_most_vehicle and other is rear_most_vehicle) or \
+                (self is rear_most_vehicle and other is front_most_vehicle):
+            dist_to_edge = self._get_distance_to_road_edge()
+            other_dist_to_edge = other._get_distance_to_road_edge()
+            return dist_to_edge + other_dist_to_edge
+        else:
+            return lane.local_coordinates(other.position)[0] - \
+                lane.local_coordinates(self.position)[0]
+
+    def _get_edge_vehicles(self, lane_index: LaneIndex) \
+            -> Tuple['CyclicVehicle']:
+        """Gets the collision-free front and rear-most vehicles in a lane."""
+        front_most_vehicle = None
+        rear_most_vehicle = None
+        for v in self.road.vehicles:
+            v_lane_index = self.road.network.get_closest_lane_index(
+                v.position, v.heading)
+            # Only search for other collision-free vehicles in the same lane.
+            if v_lane_index != lane_index or v.crashed or v is self:
+                continue
+
+            if front_most_vehicle is None and rear_most_vehicle is None:
+                front_most_vehicle = v
+                rear_most_vehicle = v
+                continue
+
+            # Get local coordinates of vehicles to support varying road types.
+            v_s = self.lane.local_coordinates(v.position)[0]
+            front_most_s = self.lane.local_coordinates(\
+                    front_most_vehicle.position)[0]
+            rear_most_s = self.lane.local_coordinates(\
+                    rear_most_vehicle.position)[0]
+            # Search for front most vehicle.
+            if v_s > front_most_s:
+                front_most_vehicle = v
+            # Search for rear most vehicle.
+            if v_s < rear_most_s:
+                rear_most_vehicle = v
+        return (front_most_vehicle, rear_most_vehicle)
+
+    def _get_distance_to_road_edge(self) -> float:
+        """Computes the distance to road's edge in the cyclic road."""
+        return abs(self.ROAD_EDGE - \
+            self.lane.local_coordinates(self.position)[0])
+
+    # Override Vehicle's step
+    def step(self, dt: float) -> None:
+        """
+        Propagate the vehicle state given its actions.
+
+        Integrate a modified bicycle model with a 1st-order response on the
+        steering wheel dynamics. If the vehicle is crashed, the actions are
+        overridden with erratic steering and braking until complete stop. The 
+        vehicle's current lane is updated.
+
+        :param dt: timestep of integration of the model [s]
+        """
+        self.clip_actions()
+        delta_f = self.action['steering']
+        beta = np.arctan(1 / 2 * np.tan(delta_f))
+        v = self.speed * np.array([np.cos(self.heading + beta),
+                                   np.sin(self.heading + beta)])
+        self.position += v * dt
+        if self.impact is not None:
+            self.position += self.impact
+            self.crashed = True
+            self.impact = None
+            self.road.vehicles.remove(self)
+            self.road.objects.remove(self.front_mirrored_vehicle)
+            self.road.objects.remove(self.rear_mirrored_vehicle)
+            collision_landmark = Landmark(self.road, self.position)
+            self.road.objects.append(collision_landmark)
+        # Reset position to the distance from the road edge if past road edge.
+        if self.lane.local_coordinates(self.position)[0] >= self.ROAD_EDGE:
+            self.position[0] = self._get_distance_to_road_edge()
+        self.heading += self.speed * np.sin(beta) / (self.LENGTH / 2) * dt
+        self.speed += self.action['acceleration'] * dt
+        # Update the position of the mirrored vehicles.
+        self.front_mirrored_vehicle.position[0] = self.position[0] + self.ROAD_EDGE
+        self.rear_mirrored_vehicle.position[0] = self.position[0] - self.ROAD_EDGE
+        self.on_state_update()
+
+    # Override Vehicle's create_random
+    @classmethod
+    def create_random(cls, road: Road,
+                      speed: float = None,
+                      lane_from: Optional[str] = None,
+                      lane_to: Optional[str] = None,
+                      lane_id: Optional[int] = None,
+                      spacing: float = 1,
+                      add_backwards: bool = False) \
+            -> "Vehicle":
+        """
+        Create a random vehicle on the road.
+
+        The lane and /or speed are chosen randomly, while longitudinal position is chosen behind the last
+        vehicle in the road with density based on the number of lanes.
+
+        :param road: the road where the vehicle is driving
+        :param speed: initial speed in [m/s]. If None, will be chosen randomly
+        :param lane_from: start node of the lane to spawn in
+        :param lane_to: end node of the lane to spawn in
+        :param lane_id: id of the lane to spawn in
+        :param spacing: the number of seconds between ego car and front car.
+        :return: A vehicle with random position and/or speed
+        """
+        _from = lane_from or road.np_random.choice(
+            list(road.network.graph.keys()))
+        _to = lane_to or road.np_random.choice(
+            list(road.network.graph[_from].keys()))
+        _id = lane_id if lane_id is not None else road.np_random.choice(
+            len(road.network.graph[_from][_to]))
+        lane = road.network.get_lane((_from, _to, _id))
+        if speed is None:
+            if lane.speed_limit is not None:
+                speed = road.np_random.uniform(
+                    0.9*lane.speed_limit, 1.0*lane.speed_limit)
+            else:
+                speed = road.np_random.uniform(
+                    Vehicle.DEFAULT_INITIAL_SPEEDS[0],
+                    Vehicle.DEFAULT_INITIAL_SPEEDS[1])
+        # Consider spacing argument as the number of seconds of travel between
+        # ego vehicle and forward car.
+        offset = spacing * speed
+        x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
+            if len(road.vehicles) else 0.
+        x0 += offset * road.np_random.uniform(0.9, 1.0)
+        v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)
+        return v
