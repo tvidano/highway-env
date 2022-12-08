@@ -62,7 +62,15 @@ def analyze_matrix(transition_matrix):
     absorbing_proportion = absorbing_states / transition_matrix.getnnz()
     # Compute the Pearson correlation. 
     corrcoeff = sample_correlation_coeff(transition_matrix)
-    return (absorbing_proportion, corrcoeff)
+    # Compute the Relative Gain Array.
+    try:
+        inv_transition_matrix = np.linalg.inv(transition_matrix.todense())
+    except np.linalg.LinAlgError:
+        inv_transition_matrix = np.linalg.pinv(transition_matrix.todense())
+    RGA = transition_matrix.multiply(inv_transition_matrix.T)
+    # Convert RGA into a single value (Skogestad and Postlethwaite).
+    mu_I = (RGA - np.identity(RGA.shape[0])).sum() / RGA.sum()
+    return (absorbing_proportion, corrcoeff, RGA, mu_I)
     
 
 def compute_num_collisions(raw_data: dict) -> int:
@@ -100,21 +108,21 @@ print(mc_4_lane.compare(mc_2_lane))
 
 print(len(set(mc_2_lane.transition_matrix.todok().nonzero()[0])))
 mc_2_T, mc_2_map = mc_2_lane.get_irreducible_matrix()
-print(f"2 lane (absorbing, diagonality)={analyze_matrix(mc_2_T)}")
+print(f"2 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_2_T)}")
 mc_2_irreducible = discrete_markov_chain(transition_matrix=mc_2_T)
 print(f"2 lane irreducible? {mc_2_irreducible.is_irreducible()}")
 print(f"2 lane entropy rate: {mc_2_irreducible.entropy_rate()}")
 print(f"Num of collisions: {compute_num_collisions(raw_data)}")
 
 mc_2_low_T, mc_2_low_map = mc_2_lane_low.get_irreducible_matrix()
-print(f"2 lane (absorbing, diagonality)={analyze_matrix(mc_2_low_T)}")
+print(f"2 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_2_low_T)}")
 mc_2_low_irreducible = discrete_markov_chain(transition_matrix=mc_2_low_T)
 print(f"2 lane irreducible? {mc_2_low_irreducible.is_irreducible()}")
 print(f"2 lane entropy rate: {mc_2_low_irreducible.entropy_rate()}")
 print(f"Num of collisions: {compute_num_collisions(mc_2_lane_low.raw_data)}")
 
 mc_4_T, mc_4_map = mc_4_lane.get_irreducible_matrix()
-print(f"4 lane (absorbing, diagonality)={analyze_matrix(mc_4_T)}")
+print(f"4 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_4_T)}")
 mc_4_irreducible = discrete_markov_chain(transition_matrix=mc_4_T)
 print(f"4 lane irreducible? {mc_4_irreducible.is_irreducible()}")
 print(f"4 lane entropy rate: {mc_4_irreducible.entropy_rate()}")
