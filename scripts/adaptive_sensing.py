@@ -12,6 +12,7 @@ import logging
 import gym  # 0.26.2
 from gym.wrappers import RecordVideo, RecordEpisodeStatistics
 import os
+os.environ['NUMPY_EXPERIMENTAL_ARRAY_FUNCTION'] = '0'
 import os.path as op
 import matplotlib.pyplot as plt
 import numpy as np
@@ -132,7 +133,7 @@ env = gym.make("highway-lidar-v0")
 # Road length = 150 m
 # vehicles per road = 5 + 1 veh
 # average vehicle velocity = 25 m/s
-# vehicles per day = 6 [veh] * 25 [m/s] / 150 [m] * 86,400 [s/day] = 86,400 veh/day
+# vehicles per day = 8 [veh] * 25 [m/s] / 150 [m] * 86,400 [s/day] = 115,200 veh/day
 # CA Annual average daily traffic can be between 50-80k for peaks.
 
 """
@@ -154,8 +155,8 @@ env.configure({
     "adaptive_observations": False,
     "constant_base_lidar": True,
     "base_lidar_frequency": 1.0,
-    "vehicles_count": 5,
-    "vehicles_density": 1/3,
+    "vehicles_count": 8,
+    "vehicles_density": 1/.4, # 1/.3 is upper limit.
 })
 seed = 100_000
 
@@ -164,7 +165,7 @@ agent_config = {
     "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
     "env_preprocessors": [{"method": "simplify"}],
     "display_tree": False,
-    "budget": 100,
+    "budget": 25,
     "gamma": 0.9,
 }
 agent = agent_factory(env, agent_config)

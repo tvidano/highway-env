@@ -30,7 +30,7 @@ class IDMVehicle(ControlledVehicle):
     COMFORT_ACC_MIN = -1.67  # [m/s2]
     """Desired maximum deceleration."""
 
-    DISTANCE_WANTED = 2.0  # [m]
+    DISTANCE_WANTED = 2.0 + ControlledVehicle.LENGTH # [m]
     """Desired jam distance to the front vehicle."""
 
     TIME_WANTED = 1.6  # [s]
@@ -46,7 +46,7 @@ class IDMVehicle(ControlledVehicle):
     POLITENESS = 0.  # in [0, 1]
     LANE_CHANGE_MIN_ACC_GAIN = 0.2  # [m/s2]
     LANE_CHANGE_MAX_BRAKING_IMPOSED = 2.0  # [m/s2]
-    LANE_CHANGE_DELAY = 2.0  # [s]
+    LANE_CHANGE_DELAY = 1.0  # [s]
 
     def __init__(self,
                  road: Road,
@@ -184,7 +184,8 @@ class IDMVehicle(ControlledVehicle):
         """
         # If a lane change is already ongoing
         if self.lane_index != self.target_lane_index:
-            # If we are on correct route but bad lane: abort it if someone else is already changing into the same lane
+            # If we are on correct route but not on target lane: abort it if 
+            # someone else is already changing into the same lane
             if self.lane_index[:2] == self.target_lane_index[:2]:
                 for v in self.road.vehicles:
                     if v is not self \

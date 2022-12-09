@@ -273,12 +273,16 @@ class CyclicVehicle(Vehicle):
         imaginary_position = np.array([self.position[0] + self.ROAD_EDGE, 
                                        self.position[1]])
         self.front_mirrored_vehicle = RoadObject(self.road, imaginary_position)
+        self.front_mirrored_vehicle.collidable = False
+        self.front_mirrored_vehicle.check_collisions = False
         self.front_mirrored_vehicle.LENGTH = self.LENGTH
         self.front_mirrored_vehicle.WIDTH = self.WIDTH
         self.road.objects.append(self.front_mirrored_vehicle)
         imaginary_position = np.array([self.position[0] - self.ROAD_EDGE,
                                        self.position[1]])
         self.rear_mirrored_vehicle = RoadObject(self.road, imaginary_position)
+        self.rear_mirrored_vehicle.collidable = False
+        self.rear_mirrored_vehicle.check_collisions = False
         self.rear_mirrored_vehicle.LENGTH = self.LENGTH
         self.rear_mirrored_vehicle.WIDTH = self.WIDTH
         self.road.objects.append(self.rear_mirrored_vehicle)
@@ -306,8 +310,7 @@ class CyclicVehicle(Vehicle):
             other_dist_to_edge = other._get_distance_to_road_edge()
             return dist_to_edge + other_dist_to_edge
         else:
-            return lane.local_coordinates(other.position)[0] - \
-                lane.local_coordinates(self.position)[0]
+            return other.position[0] - self.position[0]
 
     def _get_edge_vehicles(self, lane_index: LaneIndex) \
             -> Tuple['CyclicVehicle']:
@@ -327,11 +330,9 @@ class CyclicVehicle(Vehicle):
                 continue
 
             # Get local coordinates of vehicles to support varying road types.
-            v_s = self.lane.local_coordinates(v.position)[0]
-            front_most_s = self.lane.local_coordinates(\
-                    front_most_vehicle.position)[0]
-            rear_most_s = self.lane.local_coordinates(\
-                    rear_most_vehicle.position)[0]
+            v_s = v.position[0]
+            front_most_s = front_most_vehicle.position[0]
+            rear_most_s = rear_most_vehicle.position[0]
             # Search for front most vehicle.
             if v_s > front_most_s:
                 front_most_vehicle = v
@@ -342,8 +343,7 @@ class CyclicVehicle(Vehicle):
 
     def _get_distance_to_road_edge(self) -> float:
         """Computes the distance to road's edge in the cyclic road."""
-        return abs(self.ROAD_EDGE - \
-            self.lane.local_coordinates(self.position)[0])
+        return abs(self.ROAD_EDGE - self.position[0])
 
     # Override Vehicle's step
     def step(self, dt: float) -> None:
@@ -373,7 +373,7 @@ class CyclicVehicle(Vehicle):
             collision_landmark = Landmark(self.road, self.position)
             self.road.objects.append(collision_landmark)
         # Reset position to the distance from the road edge if past road edge.
-        if self.lane.local_coordinates(self.position)[0] >= self.ROAD_EDGE:
+        if self.position[0] >= self.ROAD_EDGE:
             self.position[0] = self._get_distance_to_road_edge()
         self.heading += self.speed * np.sin(beta) / (self.LENGTH / 2) * dt
         self.speed += self.action['acceleration'] * dt
@@ -424,7 +424,7 @@ class CyclicVehicle(Vehicle):
         # Consider spacing argument as the number of seconds of travel between
         # ego vehicle and forward car.
         offset = spacing * speed
-        x0 = np.max([lane.local_coordinates(v.position)[0] for v in road.vehicles]) \
+        x0 = np.max([v.position[0] for v in road.vehicles]) \
             if len(road.vehicles) else 0.
         x0 += offset * road.np_random.uniform(0.9, 1.0)
         v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)

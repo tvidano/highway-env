@@ -214,10 +214,10 @@ class HighwayEnvLidar(HighwayEnv):
                 "truck": 0.5,
                 "semi": 0.1,
             },
-            "other_vehicles_type": 
+            "other_vehicles_type":
                 "highway_env.vehicle.behavior.CyclicIDMVehicle",
             # Simulation related configurations.
-            "simulation_frequency": 10,  # [Hz]
+            "simulation_frequency": 5,  # [Hz]
             "policy_frequency": 1,  # [Hz]
             "duration": 30 * 1,  # [max steps per episode]
             "base_lidar_frequency": 0.5,  # [Hz], <= policy_frequency
@@ -256,7 +256,7 @@ class HighwayEnvLidar(HighwayEnv):
                                             # chosen.
             # Visualization related settings.
             "screen_width": 1000,  # [px]
-            "centering_position": [0.5, 0.5], # [px]
+            "centering_position": [0.5, 0.5],  # [px]
         })
         return cfg
 
@@ -280,7 +280,9 @@ class HighwayEnvLidar(HighwayEnv):
     def _change_vehicle_type(self, vehicle: Vehicle, type: str) -> None:
         """Changes the vehicle to a specific type of vehicle."""
         f150_width, f150_length = 2.2, 6.0
-        big_rig_width, big_rig_length = 2.6, 18.0
+        # Originally 2.6, but this was causing problems with the forward looking
+        # LIDAR index.
+        big_rig_width, big_rig_length = 2.4, 18.0
         if type == "truck":
             vehicle.LENGTH = f150_length
             vehicle.WIDTH = f150_width
@@ -291,8 +293,6 @@ class HighwayEnvLidar(HighwayEnv):
             vehicle.diagonal = np.sqrt(f150_width**2 + f150_length**2)
         elif type == "semi":
             vehicle.LENGTH = big_rig_length
-            vehicle.DISTANCE_WANTED = self.vehicle.LENGTH * \
-                2 + big_rig_length / 2
             vehicle.WIDTH = big_rig_width
             vehicle.front_mirrored_vehicle.LENGTH = big_rig_length
             vehicle.front_mirrored_vehicle.WIDTH = big_rig_width
@@ -300,6 +300,9 @@ class HighwayEnvLidar(HighwayEnv):
             vehicle.rear_mirrored_vehicle.WIDTH = big_rig_width
             vehicle.diagonal = np.sqrt(
                 big_rig_length**2 + big_rig_width**2)
+            vehicle.TIME_WANTED = 3.2 # s
+            vehicle.DISTANCE_WANTED = vehicle.LENGTH + 5.0 # m
+            vehicle.enable_lane_change = False
 
     def _distribute_vehicle_types(self):
         """
