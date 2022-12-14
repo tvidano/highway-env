@@ -3,7 +3,7 @@ import logging
 from typing import List, Tuple, Dict, TYPE_CHECKING, Optional
 
 from highway_env.road.lane import LineType, StraightLane, AbstractLane, lane_from_config
-from highway_env.vehicle.objects import Landmark
+from highway_env.vehicle.objects import MirroredObject, Landmark
 
 if TYPE_CHECKING:
     from highway_env.vehicle import kinematics, objects
@@ -346,27 +346,40 @@ class Road(object):
         :param lane_index: the lane on which to look for preceding and following vehicles.
                      It doesn't have to be the current vehicle lane but can also be another lane, in which case the
                      vehicle is projected on it considering its local coordinates in the lane.
-        :return: its preceding vehicle, its following vehicle
+        :return: the closest vehicle in front and behind of the vehicle. Cannot be the
+                 same vehicle, and either can be None.
         """
         lane_index = lane_index or vehicle.lane_index
         if not lane_index:
             return None, None
         lane = self.network.get_lane(lane_index)
         s = self.network.get_lane(lane_index).local_coordinates(vehicle.position)[0]
-        s_front = s_rear = None
+        front_dist = rear_dist = None
         v_front = v_rear = None
         for v in self.vehicles + self.objects:
-            if v is not vehicle and not isinstance(v, Landmark):  # self.network.is_connected_road(v.lane_index,
+            if v is not vehicle and not isinstance(v, Landmark) \
+                    and not isinstance(v, MirroredObject):  # self.network.is_connected_road(v.lane_index,
                 # lane_index, same_lane=True):
+                # Skip vehicles not on the lane.
                 s_v, lat_v = lane.local_coordinates(v.position)
                 if not lane.on_lane(v.position, s_v, lat_v, margin=1):
                     continue
-                if s <= s_v and (s_front is None or s_v <= s_front):
-                    s_front = s_v
+                # Use lane_distance_to instead of local_coordinates.
+                # TODO: Currently this lane_distance_to means that the max
+                # forward distance is 1/2 * lane_length.
+                v_dist = vehicle.lane_distance_to(v, lane)
+                if v_dist >= 0 and (front_dist is None or v_dist < front_dist):
                     v_front = v
-                if s_v < s and (s_rear is None or s_v > s_rear):
-                    s_rear = s_v
+                    front_dist = v_dist
+                elif v_dist < 0 and (rear_dist is None or v_dist > rear_dist):
                     v_rear = v
+                    rear_dist = v_dist
+                # if s <= s_v and (s_front is None or s_v <= s_front):
+                #     s_front = s_v
+                #     v_front = v
+                # if s_v < s and (s_rear is None or s_v > s_rear):
+                #     s_rear = s_v
+                #     v_rear = v
         return v_front, v_rear
 
     def __repr__(self):

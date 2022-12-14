@@ -214,13 +214,16 @@ class HighwayEnvLidar(HighwayEnv):
                 "truck": 0.5,
                 "semi": 0.1,
             },
-            "other_vehicles_type":
-                "highway_env.vehicle.behavior.CyclicIDMVehicle",
+            "other_vehicles_type": {
+                "sedan": "highway_env.vehicle.behavior.CyclicIDMVehicle",
+                "truck": "highway_env.vehicle.behavior.TruckVehicle",
+                "semi": "highway_env.vehicle.behavior.SemiVehicle",
+            },
             # Simulation related configurations.
             "simulation_frequency": 5,  # [Hz]
             "policy_frequency": 1,  # [Hz]
             "duration": 30 * 1,  # [max steps per episode]
-            "base_lidar_frequency": 0.5,  # [Hz], <= policy_frequency
+            "base_lidar_frequency": 1.0,  # [Hz], <= policy_frequency
             # Scenario related configurations.
             "vehicles_count": 14,
             "lanes_count": 2,
@@ -231,6 +234,7 @@ class HighwayEnvLidar(HighwayEnv):
             "adaptive_observations": True,
             "constant_base_lidar": False,  # uses base lidar frequency without
                                            # adaptive sampling.
+            "road_length": 150, # [m]
             # Observations related configurations.
             "reaction_distance": 15,    # [m] distance at which higher sampling
                                         # rates are used for lidar indices.
@@ -251,7 +255,7 @@ class HighwayEnvLidar(HighwayEnv):
                                         # full speed, linearly mapped to zero
                                         # for lower speeds according to
                                         # config["reward_speed_range"].
-            "reward_speed_range": [20, 40],
+            "reward_speed_range": [20, 35],
             "smooth_driving_reward": 1.0,   # The reward received when IDLE is
                                             # chosen.
             # Visualization related settings.
@@ -262,7 +266,7 @@ class HighwayEnvLidar(HighwayEnv):
 
     def _reset(self) -> None:
         super()._reset()
-        self._distribute_vehicle_types()
+        # self._distribute_vehicle_types()
         self.lidar_count = 0
         self.lidar_buffer = self.observation_type.observe()
         self.obs_step = 0
@@ -272,82 +276,128 @@ class HighwayEnvLidar(HighwayEnv):
         """Create a road composed of straight adjacent lanes."""
         self.road = Road(
             network=RoadNetwork.straight_road_network(
-                self.config["lanes_count"], length=150,
+                self.config["lanes_count"], length=self.config["road_length"],
                 speed_limit=self.config["road_speed_limit"]),
             np_random=self.np_random,
             record_history=self.config["show_trajectories"])
 
-    def _change_vehicle_type(self, vehicle: Vehicle, type: str) -> None:
-        """Changes the vehicle to a specific type of vehicle."""
-        f150_width, f150_length = 2.2, 6.0
-        # Originally 2.6, but this was causing problems with the forward looking
-        # LIDAR index.
-        big_rig_width, big_rig_length = 2.4, 18.0
-        if type == "truck":
-            vehicle.LENGTH = f150_length
-            vehicle.WIDTH = f150_width
-            vehicle.front_mirrored_vehicle.LENGTH = f150_length
-            vehicle.front_mirrored_vehicle.WIDTH = f150_width
-            vehicle.rear_mirrored_vehicle.LENGTH = f150_length
-            vehicle.rear_mirrored_vehicle.WIDTH = f150_width
-            vehicle.diagonal = np.sqrt(f150_width**2 + f150_length**2)
-        elif type == "semi":
-            vehicle.LENGTH = big_rig_length
-            vehicle.WIDTH = big_rig_width
-            vehicle.front_mirrored_vehicle.LENGTH = big_rig_length
-            vehicle.front_mirrored_vehicle.WIDTH = big_rig_width
-            vehicle.rear_mirrored_vehicle.LENGTH = big_rig_length
-            vehicle.rear_mirrored_vehicle.WIDTH = big_rig_width
-            vehicle.diagonal = np.sqrt(
-                big_rig_length**2 + big_rig_width**2)
-            vehicle.TIME_WANTED = 3.2 # s
-            vehicle.DISTANCE_WANTED = vehicle.LENGTH + 5.0 # m
-            vehicle.enable_lane_change = False
+    def _create_vehicles(self) -> None:
+        """Create some new random vehicles of a given type, and add them on the
+        road."""
+        semi_truck_type = utils.class_from_path(
+            self.config["other_vehicles_type"]["semi"])
+        pickup_truck_type = utils.class_from_path(
+            self.config["other_vehicles_type"]["truck"])
+        sedan_type = utils.class_from_path(
+            self.config["other_vehicles_type"]["sedan"])
+        vehicle_types = [semi_truck_type, pickup_truck_type, sedan_type]
+        other_per_controlled = near_split(
+            self.config["vehicles_count"], 
+            num_bins=self.config["controlled_vehicles"])
+        
+        self.controlled_vehicles = []
+        for others in other_per_controlled:
+            # Create controlled vehicle defined in action_type starting with
+            # Vehicle framework.
+            vehicle = Vehicle.create_random(
+                self.road,
+                speed=self.config["initial_ego_speed"],
+                lane_id=self.config["initial_lane_id"],
+                spacing=self.config["ego_spacing"]
+            )
+            vehicle.position[0] = 0.
+            vehicle = self.action_type.vehicle_class(
+                self.road, vehicle.position, vehicle.heading, vehicle.speed)
+            vehicle.target_speeds = self.config["vehicle_speeds"]
+            self.controlled_vehicles.append(vehicle)
+            self.road.vehicles.append(vehicle)
 
-    def _distribute_vehicle_types(self):
-        """
-        Change vehicles distributed throughout the highway according to the
-        config parameter vehicle type distribution.
-        """
-        vehicle_types = self.config["vehicle_type_distribution"]
-        assert sum(vehicle_types.values()) == 1.0, \
-            "the distribution of vehicle types must total 1.0."
-        vehicles = self.road.vehicles[1:]
-        vehicle_index = np.arange(len(vehicles))
-        self.np_random.shuffle(vehicle_index)
-        num_sedans = round(vehicle_types["sedan"] * len(vehicles))
-        num_trucks = round(vehicle_types["truck"] * len(vehicles))
-        truck_indices = vehicle_index[num_sedans:num_sedans + num_trucks]
-        semi_indices = vehicle_index[num_sedans + num_trucks:]
-        for i in truck_indices:
-            self._change_vehicle_type(vehicles[i], "truck")
-        # List semi_indices by vehicle location in decreasing x position.
-        sorted_semi_indices = sorted(
-            semi_indices, key=lambda i: vehicles[i].position[0], reverse=True)
-        # Create semi trucks by modifying existing vehicles.
-        for i in sorted_semi_indices:
-            # Change vehicle parameters and goals to model a semi truck.
-            self._change_vehicle_type(vehicles[i], "semi")
-            # Move semi trucks so they are 2 other car lengths away from other
-            # vehicles so not initialized in a collision.
-            front_vehicle, rear_vehicle = vehicles[i].road.neighbour_vehicles(
-                vehicles[i], vehicles[i].lane_index)
-            # If semi is initialized too close to the vehicle in front, move
-            # all vehicles in that lane behind the front vehicle back.
-            safe_distance = vehicles[i].LENGTH / 2. + self.vehicle.LENGTH * 2.5
-            if front_vehicle and \
-                    front_vehicle.position[0] - vehicles[i].position[0] <= \
-                    front_vehicle.LENGTH / 2. + vehicles[i].LENGTH / 2. + \
-                    self.vehicle.LENGTH * 2.:
-                self._shift_all_vehicles_behind(front_vehicle, safe_distance)
+            # Add vehicles in front of the most forward vehicle.
+            for _ in range(others):
+                other_vehicle_type = self.road.np_random.choice(
+                    vehicle_types, 1, 
+                    p=[self.config["vehicle_type_distribution"]["semi"],
+                       self.config["vehicle_type_distribution"]["truck"],
+                       self.config["vehicle_type_distribution"]["sedan"]])[0]
+                vehicle = other_vehicle_type.create_random(
+                    self.road, spacing=1 / self.config["vehicles_density"])
+                vehicle.target_speeds = self.config["vehicle_speeds"]
+                vehicle.randomize_behavior()
+                self.road.vehicles.append(vehicle)
 
-            # If semi is initialized too close to the vehicle in rear, move all
-            # vehicles in that lane behind the semi back.
-            if rear_vehicle and \
-                    vehicles[i].position[0] - rear_vehicle.position[0] <= \
-                    vehicles[i].LENGTH / 2. + rear_vehicle.LENGTH / 2. + \
-                    self.vehicle.LENGTH * 2.:
-                self._shift_all_vehicles_behind(vehicles[i], safe_distance)
+    # def _change_vehicle_type(self, vehicle: Vehicle, type: str) -> None:
+    #     """Changes the vehicle to a specific type of vehicle."""
+    #     f150_width, f150_length = 2.2, 6.0
+    #     # 
+    #     big_rig_width, big_rig_length = 2.4, 18.0
+    #     if type == "truck":
+    #         vehicle.LENGTH = f150_length
+    #         vehicle.WIDTH = f150_width
+    #         vehicle.front_mirrored_vehicle.LENGTH = f150_length
+    #         vehicle.front_mirrored_vehicle.WIDTH = f150_width
+    #         vehicle.rear_mirrored_vehicle.LENGTH = f150_length
+    #         vehicle.rear_mirrored_vehicle.WIDTH = f150_width
+    #         vehicle.diagonal = np.sqrt(f150_width**2 + f150_length**2)
+    #     elif type == "semi":
+    #         vehicle.LENGTH = big_rig_length
+    #         vehicle.WIDTH = big_rig_width
+    #         vehicle.front_mirrored_vehicle.LENGTH = big_rig_length
+    #         vehicle.front_mirrored_vehicle.WIDTH = big_rig_width
+    #         vehicle.rear_mirrored_vehicle.LENGTH = big_rig_length
+    #         vehicle.rear_mirrored_vehicle.WIDTH = big_rig_width
+    #         vehicle.diagonal = np.sqrt(
+    #             big_rig_length**2 + big_rig_width**2)
+    #         vehicle.TIME_WANTED = 3.2 # s
+    #         vehicle.DISTANCE_WANTED = vehicle.LENGTH + 5.0 # m
+    #         vehicle.enable_lane_change = False
+
+    # def _distribute_vehicle_types(self):
+    #     """
+    #     Change vehicles distributed throughout the highway according to the
+    #     config parameter vehicle type distribution.
+    #     """
+    #     vehicle_types = self.config["vehicle_type_distribution"]
+    #     assert sum(vehicle_types.values()) == 1.0, \
+    #         "the distribution of vehicle types must total 1.0."
+    #     vehicles = self.road.vehicles[1:]
+    #     vehicle_index = np.arange(len(vehicles))
+    #     self.np_random.shuffle(vehicle_index)
+    #     num_sedans = round(vehicle_types["sedan"] * len(vehicles))
+    #     num_trucks = round(vehicle_types["truck"] * len(vehicles))
+    #     truck_indices = vehicle_index[num_sedans:num_sedans + num_trucks]
+    #     semi_indices = vehicle_index[num_sedans + num_trucks:]
+    #     for i in truck_indices:
+    #         self._change_vehicle_type(vehicles[i], "truck")
+    #     # List semi_indices by vehicle location in decreasing x position.
+    #     sorted_semi_indices = sorted(
+    #         semi_indices, key=lambda i: vehicles[i].position[0], reverse=True)
+    #     # Create semi trucks by modifying existing vehicles.
+    #     for i in sorted_semi_indices:
+    #         # Change vehicle parameters and goals to model a semi truck.
+    #         self._change_vehicle_type(vehicles[i], "semi")
+    #         # Move semi trucks so they are 2 other car lengths away from other
+    #         # vehicles so not initialized in a collision.
+    #         front_vehicle, rear_vehicle = vehicles[i].road.neighbour_vehicles(
+    #             vehicles[i], vehicles[i].lane_index)
+    #         # # If semi is initialized too close to the vehicle in front, move
+    #         # # all vehicles in that lane behind the front vehicle back.
+    #         # safe_distance = vehicles[i].LENGTH / 2. + self.vehicle.LENGTH *
+    #         # 2.5
+    #         safe_distance = vehicles[i].desired_gap(vehicles[i], front_vehicle)
+    #         if front_vehicle and \
+    #                 front_vehicle.position[0] - vehicles[i].position[0] <= \
+    #                 safe_distance:
+    #                 # front_vehicle.LENGTH / 2. + vehicles[i].LENGTH / 2. + \
+    #                 # self.vehicle.LENGTH * 2.:
+    #             self._shift_all_vehicles_behind(front_vehicle, safe_distance)
+
+    #         # # If semi is initialized too close to the vehicle in rear, move all
+    #         # # vehicles in that lane behind the semi back.
+    #         # if rear_vehicle and \
+    #         #         vehicles[i].position[0] - rear_vehicle.position[0] <= \
+    #         #         vehicles[i].LENGTH / 2. + rear_vehicle.LENGTH / 2. + \
+    #         #         self.vehicle.LENGTH * 2.:
+    #         #     self._shift_all_vehicles_behind(vehicles[i], safe_distance)
 
     def _shift_all_vehicles_behind(self, vehicle, distance):
         """Move all vehicles behind |vehicle| in the same lane back |distance|."""

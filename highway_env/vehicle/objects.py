@@ -195,3 +195,18 @@ class Landmark(RoadObject):
         super().__init__(road, position, heading, speed)
         self.solid = False
 
+
+class MirroredObject(RoadObject):
+
+    """An object intended to be used on Cyclic roads to support
+    observations."""
+    
+    def __init__(self, road: 'Road', position: Sequence[float], 
+                 heading: float = 0, speed: float = 0, 
+                 length: float = RoadObject.LENGTH, 
+                 width: float = RoadObject.WIDTH):
+        super().__init__(road, position, heading, speed)
+        self.LENGTH = length
+        self.WIDTH = width
+        self.collidable = False
+        self.check_collisions = False

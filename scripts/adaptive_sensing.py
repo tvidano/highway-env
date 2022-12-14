@@ -156,16 +156,18 @@ env.configure({
     "constant_base_lidar": True,
     "base_lidar_frequency": 1.0,
     "vehicles_count": 8,
-    "vehicles_density": 1/.4, # 1/.3 is upper limit.
+    "vehicles_density": 1/.3, # 1/.3 is upper limit.
+    "road_length": 150,
+    "high_speed_reward": 0.5,
 })
-seed = 100_000
+seed = 1_001
 
 # Make agent
 agent_config = {
     "__class__": "<class 'rl_agents.agents.tree_search.deterministic.DeterministicPlannerAgent'>",
     "env_preprocessors": [{"method": "simplify"}],
     "display_tree": False,
-    "budget": 25,
+    "budget": 50,
     "gamma": 0.9,
 }
 agent = agent_factory(env, agent_config)

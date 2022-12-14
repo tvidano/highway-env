@@ -5,11 +5,10 @@ from collections import deque
 
 from highway_env import utils
 from highway_env.road.road import Road, LaneIndex
-from highway_env.vehicle.objects import RoadObject, Obstacle, Landmark
+from highway_env.vehicle.objects import MirroredObject, RoadObject, Obstacle, Landmark
 from highway_env.utils import Vector
 
 if TYPE_CHECKING:
-    from highway_env.vehicle.objects import RoadObject
     from highway_env.road.lane import AbstractLane
 class Vehicle(RoadObject):
 
@@ -258,9 +257,6 @@ class CyclicVehicle(Vehicle):
     """A kinematic vehicle that when past the road edge, will restart at the
     road origin."""
 
-    ROAD_EDGE = 150 # [m]
-    """ The maximum x position for a vehicle on the highway_env. """
-
     def __init__(self,
                  road: Road,
                  position: Vector,
@@ -270,29 +266,42 @@ class CyclicVehicle(Vehicle):
         super().__init__(road, position, heading, speed, predition_type)
         # Create imaginary vehicles past the edges of the road to support
         # different kinds of observations.
-        imaginary_position = np.array([self.position[0] + self.ROAD_EDGE, 
+        # Assume all lanes are equal length and the length of the lane is the
+        # edge of the road.
+        self.road_edge = self.road.network.get_lane(self.lane_index).length
+        imaginary_position = np.array([self.position[0] + self.road_edge, 
                                        self.position[1]])
-        self.front_mirrored_vehicle = RoadObject(self.road, imaginary_position)
-        self.front_mirrored_vehicle.collidable = False
-        self.front_mirrored_vehicle.check_collisions = False
-        self.front_mirrored_vehicle.LENGTH = self.LENGTH
-        self.front_mirrored_vehicle.WIDTH = self.WIDTH
+        self.front_mirrored_vehicle = MirroredObject(
+            self.road, imaginary_position, length=self.LENGTH, 
+            width=self.WIDTH)
         self.road.objects.append(self.front_mirrored_vehicle)
-        imaginary_position = np.array([self.position[0] - self.ROAD_EDGE,
+        imaginary_position = np.array([self.position[0] - self.road_edge,
                                        self.position[1]])
-        self.rear_mirrored_vehicle = RoadObject(self.road, imaginary_position)
-        self.rear_mirrored_vehicle.collidable = False
-        self.rear_mirrored_vehicle.check_collisions = False
-        self.rear_mirrored_vehicle.LENGTH = self.LENGTH
-        self.rear_mirrored_vehicle.WIDTH = self.WIDTH
+        self.rear_mirrored_vehicle = MirroredObject(
+            self.road, imaginary_position, length=self.LENGTH, 
+            width=self.WIDTH)
         self.road.objects.append(self.rear_mirrored_vehicle)
+        self.is_front_most_vehicle = False
+        self.is_rear_most_vehicle = False
+        self._update_if_front_rear_edge()
+
+    def _update_if_front_rear_edge(self):
+        """Define bools if front or rear edge vehicle."""
+        veh_pos_in_lane = [v.position[0] for v in self.road.vehicles \
+            if v.lane_index == self.lane_index]
+        if len(veh_pos_in_lane) == 0:
+            self.is_front_most_vehicle = True
+            self.is_rear_most_vehicle = True
+            return
+        self.is_rear_most_vehicle = self.position[0] <= min(veh_pos_in_lane)
+        self.is_front_most_vehicle = self.position[0] >= max(veh_pos_in_lane)
 
     # Override RoadObject's lane_distance_to
     def lane_distance_to(self, other: 'CyclicVehicle',
             lane: 'AbstractLane' = None) -> float:
         """
-        Compute the signed distance to another object along as per the cyclic
-        road type.
+        Compute the signed distance to another object along lane as per the
+        cyclic road type. Assuming linear road.
 
         :param other: the other object
         :param lane: a lane
@@ -302,15 +311,28 @@ class CyclicVehicle(Vehicle):
             return np.nan
         if lane is None:
             lane = self.lane
-        front_most_vehicle, rear_most_vehicle = \
-            self._get_edge_vehicles(self.lane_index)
-        if (self is front_most_vehicle and other is rear_most_vehicle) or \
-                (self is rear_most_vehicle and other is front_most_vehicle):
-            dist_to_edge = self._get_distance_to_road_edge()
-            other_dist_to_edge = other._get_distance_to_road_edge()
-            return dist_to_edge + other_dist_to_edge
+        # Compute the distance.
+        distance = other.position[0] - self.position[0]
+        # Compute the distance using the cyclic road.
+        if distance >= 0:
+            cycle_distance = distance - self.road_edge
         else:
-            return other.position[0] - self.position[0]
+            cycle_distance = self.road_edge + distance
+        # Return the distance with the smallest magnitude.
+        return distance if abs(distance) < abs(cycle_distance) \
+            else cycle_distance
+
+        # front_most_vehicle, rear_most_vehicle = \
+        #     self._get_edge_vehicles(self.lane_index)
+        # if (self is front_most_vehicle and other is rear_most_vehicle) or \
+        #         (self is rear_most_vehicle and other is front_most_vehicle):
+        #     dist_to_edge = self._get_distance_to_road_edge()
+        #     other_dist_to_edge = other._get_distance_to_road_edge()
+        #     assert dist_to_edge > 0
+        #     assert other_dist_to_edge > 0
+        #     return dist_to_edge + other_dist_to_edge
+        # else:
+        #     return other.position[0] - self.position[0]
 
     def _get_edge_vehicles(self, lane_index: LaneIndex) \
             -> Tuple['CyclicVehicle']:
@@ -318,32 +340,20 @@ class CyclicVehicle(Vehicle):
         front_most_vehicle = None
         rear_most_vehicle = None
         for v in self.road.vehicles:
-            v_lane_index = self.road.network.get_closest_lane_index(
-                v.position, v.heading)
-            # Only search for other collision-free vehicles in the same lane.
-            if v_lane_index != lane_index or v.crashed or v is self:
-                continue
-
-            if front_most_vehicle is None and rear_most_vehicle is None:
-                front_most_vehicle = v
-                rear_most_vehicle = v
-                continue
-
-            # Get local coordinates of vehicles to support varying road types.
-            v_s = v.position[0]
-            front_most_s = front_most_vehicle.position[0]
-            rear_most_s = rear_most_vehicle.position[0]
-            # Search for front most vehicle.
-            if v_s > front_most_s:
-                front_most_vehicle = v
-            # Search for rear most vehicle.
-            if v_s < rear_most_s:
-                rear_most_vehicle = v
+            v._update_if_front_rear_edge()
+            if v.lane_index == lane_index:
+                if v.is_front_most_vehicle:
+                    front_most_vehicle = v
+                if v.is_rear_most_vehicle:
+                    rear_most_vehicle = v
+            if front_most_vehicle is not None \
+                    and rear_most_vehicle is not None:
+                break
         return (front_most_vehicle, rear_most_vehicle)
 
     def _get_distance_to_road_edge(self) -> float:
-        """Computes the distance to road's edge in the cyclic road."""
-        return abs(self.ROAD_EDGE - self.position[0])
+        """Computes the signed distance to road's edge in the cyclic road."""
+        return self.road_edge - self.position[0]
 
     # Override Vehicle's step
     def step(self, dt: float) -> None:
@@ -373,13 +383,14 @@ class CyclicVehicle(Vehicle):
             collision_landmark = Landmark(self.road, self.position)
             self.road.objects.append(collision_landmark)
         # Reset position to the distance from the road edge if past road edge.
-        if self.position[0] >= self.ROAD_EDGE:
+        if self.position[0] >= self.road_edge:
             self.position[0] = self._get_distance_to_road_edge()
         self.heading += self.speed * np.sin(beta) / (self.LENGTH / 2) * dt
         self.speed += self.action['acceleration'] * dt
         # Update the position of the mirrored vehicles.
-        self.front_mirrored_vehicle.position[0] = self.position[0] + self.ROAD_EDGE
-        self.rear_mirrored_vehicle.position[0] = self.position[0] - self.ROAD_EDGE
+        self.front_mirrored_vehicle.position[0] = self.position[0] + self.road_edge
+        self.rear_mirrored_vehicle.position[0] = self.position[0] - self.road_edge
+        self._update_if_front_rear_edge()
         self.on_state_update()
 
     # Override Vehicle's create_random
@@ -424,8 +435,9 @@ class CyclicVehicle(Vehicle):
         # Consider spacing argument as the number of seconds of travel between
         # ego vehicle and forward car.
         offset = spacing * speed
-        x0 = np.max([v.position[0] for v in road.vehicles]) \
-            if len(road.vehicles) else 0.
+        in_lane_x0 = [v.position[0] + v.LENGTH / 2 for v in road.vehicles \
+            if v.lane_index[2] == _id]
+        x0 = np.max(in_lane_x0) if len(in_lane_x0) > 0 else 0
         x0 += offset * road.np_random.uniform(0.9, 1.0)
         v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)
         return v

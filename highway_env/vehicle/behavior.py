@@ -43,10 +43,10 @@ class IDMVehicle(ControlledVehicle):
     """Range of delta when chosen randomly."""
 
     # Lateral policy parameters
-    POLITENESS = 0.  # in [0, 1]
+    POLITENESS = 0.5  # in [0, 1]
     LANE_CHANGE_MIN_ACC_GAIN = 0.2  # [m/s2]
-    LANE_CHANGE_MAX_BRAKING_IMPOSED = 2.0  # [m/s2]
-    LANE_CHANGE_DELAY = 1.0  # [s]
+    LANE_CHANGE_MAX_BRAKING_IMPOSED = 4.0  # [m/s2]
+    LANE_CHANGE_DELAY = 5.0  # [s]
 
     def __init__(self,
                  road: Road,
@@ -152,6 +152,7 @@ class IDMVehicle(ControlledVehicle):
 
         if front_vehicle:
             d = ego_vehicle.lane_distance_to(front_vehicle)
+            assert d >= 0
             acceleration -= self.COMFORT_ACC_MAX * \
                 np.power(self.desired_gap(ego_vehicle, front_vehicle) / utils.not_zero(d), 2)
         return acceleration
@@ -228,15 +229,23 @@ class IDMVehicle(ControlledVehicle):
         :return: whether the lane change should be performed
         """
         # Is the maneuver unsafe for the new following vehicle?
-        new_preceding, new_following = self.road.neighbour_vehicles(self, lane_index)
-        new_following_a = self.acceleration(ego_vehicle=new_following, front_vehicle=new_preceding)
-        new_following_pred_a = self.acceleration(ego_vehicle=new_following, front_vehicle=self)
-        if new_following_pred_a < -self.LANE_CHANGE_MAX_BRAKING_IMPOSED:
+        new_v_in_front, new_v_in_rear = self.road.neighbour_vehicles(self, lane_index)
+        new_v_in_rear_a = self.acceleration(ego_vehicle=new_v_in_rear, front_vehicle=new_v_in_front)
+        new_v_in_rear_pred_a = self.acceleration(ego_vehicle=new_v_in_rear, front_vehicle=self)
+        if new_v_in_rear_pred_a < -self.LANE_CHANGE_MAX_BRAKING_IMPOSED:
             return False
+        # if new_v_in_front is not None and \
+        #         abs(new_v_in_front.position[0] - self.position[0]) \
+        #         < 1/2*new_v_in_front.LENGTH + 1/2*self.LENGTH:
+        #     return False
+        # if new_v_in_rear is not None and \
+        #         abs(new_v_in_rear.position[0] - self.position[0]) \
+        #         < 1/2*new_v_in_rear.LENGTH + 1/2*self.LENGTH:
+        #     return False
 
         # Do I have a planned route for a specific lane which is safe for me to access?
-        old_preceding, old_following = self.road.neighbour_vehicles(self)
-        self_pred_a = self.acceleration(ego_vehicle=self, front_vehicle=new_preceding)
+        old_v_in_front, old_v_in_rear = self.road.neighbour_vehicles(self)
+        self_pred_a = self.acceleration(ego_vehicle=self, front_vehicle=new_v_in_front)
         if self.route and self.route[0][2] is not None:
             # Wrong direction
             if np.sign(lane_index[2] - self.target_lane_index[2]) != np.sign(self.route[0][2] - self.target_lane_index[2]):
@@ -247,11 +256,11 @@ class IDMVehicle(ControlledVehicle):
 
         # Is there an acceleration advantage for me and/or my followers to change lane?
         else:
-            self_a = self.acceleration(ego_vehicle=self, front_vehicle=old_preceding)
-            old_following_a = self.acceleration(ego_vehicle=old_following, front_vehicle=self)
-            old_following_pred_a = self.acceleration(ego_vehicle=old_following, front_vehicle=old_preceding)
-            jerk = self_pred_a - self_a + self.POLITENESS * (new_following_pred_a - new_following_a
-                                                             + old_following_pred_a - old_following_a)
+            self_a = self.acceleration(ego_vehicle=self, front_vehicle=old_v_in_front)
+            old_v_in_rear_a = self.acceleration(ego_vehicle=old_v_in_rear, front_vehicle=self)
+            old_v_in_rear_pred_a = self.acceleration(ego_vehicle=old_v_in_rear, front_vehicle=old_v_in_front)
+            jerk = self_pred_a - self_a + self.POLITENESS * (new_v_in_rear_pred_a - new_v_in_rear_a
+                                                             + old_v_in_rear_pred_a - old_v_in_rear_a)
             if jerk < self.LANE_CHANGE_MIN_ACC_GAIN:
                 return False
 
@@ -309,12 +318,6 @@ class CyclicIDMVehicle(IDMVehicle, CyclicVehicle):
 
         # Longitudinal: IDM
         front_vehicle, rear_vehicle = self.road.neighbour_vehicles(self, self.lane_index)
-        front_most_vehicle, rear_most_vehicle = \
-            self._get_edge_vehicles(self.lane_index)
-        if front_vehicle is None:
-            front_vehicle = rear_most_vehicle
-        if rear_vehicle is None:
-            rear_vehicle = front_most_vehicle
         action['acceleration'] = self.acceleration(ego_vehicle=self,
                                                    front_vehicle=front_vehicle,
                                                    rear_vehicle=rear_vehicle)
@@ -328,6 +331,88 @@ class CyclicIDMVehicle(IDMVehicle, CyclicVehicle):
         # action['acceleration'] = self.recover_from_stop(action['acceleration'])
         action['acceleration'] = np.clip(action['acceleration'], -self.ACC_MAX, self.ACC_MAX)
         Vehicle.act(self, action)  # Skip ControlledVehicle.act(), or the command will be overriden.
+
+    def get_neighbors(self, lane_index: LaneIndex) \
+            -> Tuple[CyclicVehicle, CyclicVehicle]:
+        """
+        Find the preceding and following vehicles in lane_index.
+
+        :param lane_index: the lane on which to look for preceding and 
+                           following vehicles. It doesn't have to be the
+                           current vehicle lane but can also be another lane,
+                           in which case the vehicle is projected on it 
+                           considering its local coordinates in the lane.
+        :return: the closest vehicle in front and behind of the vehicle. 
+                 Cannot be self, and either can be None.
+        """
+        front_dist = rear_dist = None
+        v_front = v_rear = None
+        for v in self.road.vehicles:
+            if v is self and v.lane_index != lane_index:
+                continue
+            v_dist = v.position[0] - self.position[0]
+            if v_dist >= 0 and (front_dist is None or v_dist < front_dist):
+                v_front = v
+                front_dist = v_dist
+            elif v_dist < 0 and (rear_dist is None or v_dist > rear_dist):
+                v_rear = v
+                rear_dist = v_dist
+        return v_front, v_rear
+
+
+class SemiVehicle(CyclicIDMVehicle):
+
+    """A semi truck version of the CyclicIDMVehicle."""
+
+    # Vehicle Parameters
+    LENGTH = 18.0
+    """ Vehicle length [m] """
+    # Originally 2.6, but this was causing problems with the forward looking
+    # LIDAR index.
+    WIDTH = 2.4
+    """ Vehicle width [m] """
+    DEFAULT_INITIAL_SPEEDS = [23, 25]
+    """ Range for random initial speeds [m/s] """
+    MAX_SPEED = 29.
+    """ Maximum reachable speed [m/s] """
+    MIN_SPEED = -29.
+    """ Minimum reachable speed [m/s] """
+
+    # Longitudinal policy parameters
+    ACC_MAX = 3.0  # [m/s2]
+    """Maximum acceleration."""
+    DISTANCE_WANTED = LENGTH + 5.0  # [m]
+    """Desired jam distance to the front vehicle."""
+    TIME_WANTED = 3.2
+    """Desired time gap to the front vehicle."""
+
+    # Lateral policy parameters
+    POLITENESS = 1.0  # in [0, 1]
+
+    def __init__(self, road: Road, position: Vector, heading: float = 0, speed: float = 0, predition_type: str = 'constant_steering'):
+        super().__init__(road, position, heading, speed)
+        assert abs(self.diagonal - np.sqrt(18**2 + 2.4**2)) < 1e-4
+        self.enable_lane_change = True
+
+
+class TruckVehicle(CyclicIDMVehicle):
+
+    """A pickup truck version of the CyclicIDMVehicle. (similar to F150)"""
+
+    # Vehicle Parameters
+    LENGTH = 6.0
+    """ Vehicle length [m] """
+    # Originally 2.6, but this was causing problems with the forward looking
+    # LIDAR index.
+    WIDTH = 2.2
+    """ Vehicle width [m] """
+
+    # Longitudinal policy parameters
+    DISTANCE_WANTED = LENGTH + 2.0  # [m]
+    """Desired jam distance to the front vehicle."""
+
+    def __init__(self, road: Road, position: Vector, heading: float = 0, speed: float = 0, predition_type: str = 'constant_steering'):
+        super().__init__(road, position, heading, speed)
 
 
 class LinearVehicle(IDMVehicle):
