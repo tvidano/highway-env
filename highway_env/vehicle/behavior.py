@@ -151,8 +151,8 @@ class IDMVehicle(ControlledVehicle):
                 1 - np.power(max(ego_vehicle.speed, 0) / ego_target_speed, self.DELTA))
 
         if front_vehicle:
-            d = ego_vehicle.lane_distance_to(front_vehicle)
-            assert d >= 0
+            d, cyclic_d = ego_vehicle.lane_distance_to(front_vehicle, return_both=True)
+            d = max(d, cyclic_d)
             acceleration -= self.COMFORT_ACC_MAX * \
                 np.power(self.desired_gap(ego_vehicle, front_vehicle) / utils.not_zero(d), 2)
         return acceleration
@@ -196,6 +196,10 @@ class IDMVehicle(ControlledVehicle):
                         d = self.lane_distance_to(v)
                         d_star = self.desired_gap(self, v)
                         if 0 < d < d_star:
+                            try:
+                                self.lanes_changed_count -= 1
+                            except AttributeError:
+                                pass
                             self.target_lane_index = self.lane_index
                             break
             return
@@ -234,6 +238,17 @@ class IDMVehicle(ControlledVehicle):
         new_v_in_rear_pred_a = self.acceleration(ego_vehicle=new_v_in_rear, front_vehicle=self)
         if new_v_in_rear_pred_a < -self.LANE_CHANGE_MAX_BRAKING_IMPOSED:
             return False
+        # Simple check to see if there will be a collision resulting
+        # from the lane change.
+        if new_v_in_rear is not None and \
+                abs(self.lane_distance_to(new_v_in_rear)) < \
+                self.LENGTH / 2 + new_v_in_rear.LENGTH / 2 + 5.0:
+            return False
+        if new_v_in_front is not None and \
+                abs(self.lane_distance_to(new_v_in_front)) < \
+                self.LENGTH / 2 + new_v_in_front.LENGTH / 2 + 5.0:
+            return False
+        
         # if new_v_in_front is not None and \
         #         abs(new_v_in_front.position[0] - self.position[0]) \
         #         < 1/2*new_v_in_front.LENGTH + 1/2*self.LENGTH:
@@ -243,7 +258,8 @@ class IDMVehicle(ControlledVehicle):
         #         < 1/2*new_v_in_rear.LENGTH + 1/2*self.LENGTH:
         #     return False
 
-        # Do I have a planned route for a specific lane which is safe for me to access?
+        # Do I have a planned route for a specific lane which is safe for me to
+        # access?
         old_v_in_front, old_v_in_rear = self.road.neighbour_vehicles(self)
         self_pred_a = self.acceleration(ego_vehicle=self, front_vehicle=new_v_in_front)
         if self.route and self.route[0][2] is not None:
@@ -293,6 +309,15 @@ class CyclicIDMVehicle(IDMVehicle, CyclicVehicle):
     vehicles cycle from front to back or vice versa depending on their distance
     to the controlled vehicle."""
 
+    def __init__(self, road: Road, position: Vector, heading: float = 0, speed: float = 0, predition_type: str = 'constant_steering'):
+        super().__init__(road, position, heading, speed)
+        self.lanes_changed_count = 0
+
+    def randomize_behavior(self):
+        self.COMFORT_ACC_MAX = self.road.np_random.uniform(0.8, 2.5)
+        self.TIME_WANTED = self.road.np_random.uniform(0.8, 3)
+        self.COMFORT_ACC_MIN = self.road.np_random.uniform(-3.0, -0.8)
+
     # Override IDMVehicle's act().
     def act(self, action: Union[dict, str] = None):
         """
@@ -313,6 +338,8 @@ class CyclicIDMVehicle(IDMVehicle, CyclicVehicle):
         self.follow_road()
         if self.enable_lane_change:
             self.change_lane_policy()
+        if self.lane_index != self.target_lane_index:
+            self.lanes_changed_count += 1
         action['steering'] = self.steering_control(self.target_lane_index)
         action['steering'] = np.clip(action['steering'], -self.MAX_STEERING_ANGLE, self.MAX_STEERING_ANGLE)
 
@@ -377,6 +404,7 @@ class SemiVehicle(CyclicIDMVehicle):
     """ Maximum reachable speed [m/s] """
     MIN_SPEED = -29.
     """ Minimum reachable speed [m/s] """
+    SPEED_GAINS = [0.8, 0.9]
 
     # Longitudinal policy parameters
     ACC_MAX = 3.0  # [m/s2]
@@ -392,7 +420,13 @@ class SemiVehicle(CyclicIDMVehicle):
     def __init__(self, road: Road, position: Vector, heading: float = 0, speed: float = 0, predition_type: str = 'constant_steering'):
         super().__init__(road, position, heading, speed)
         assert abs(self.diagonal - np.sqrt(18**2 + 2.4**2)) < 1e-4
-        self.enable_lane_change = True
+        # The lane change controller oscillates.
+        self.enable_lane_change = False
+
+    def randomize_behavior(self):
+        self.COMFORT_ACC_MAX = self.road.np_random.uniform(0.3, 1.0)
+        self.TIME_WANTED = self.road.np_random.uniform(1.5, 3)
+        self.COMFORT_ACC_MIN = self.road.np_random.uniform(-2, -1.5)
 
 
 class TruckVehicle(CyclicIDMVehicle):

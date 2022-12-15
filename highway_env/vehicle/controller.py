@@ -318,3 +318,21 @@ class MDPVehicle(ControlledVehicle):
 class CyclicMDPVehicle(MDPVehicle, CyclicVehicle):
 
     """An MDP Vehicle that cycles within a defined road segment."""
+
+    def __init__(self, 
+                 road: Road, 
+                 position: List[float], 
+                 heading: float = 0, 
+                 speed: float = 0, 
+                 target_lane_index: Optional[LaneIndex] = None, 
+                 target_speed: Optional[float] = None, 
+                 target_speeds: Optional[Vector] = None, 
+                 route: Optional[Route] = None) -> None:
+        super().__init__(road, position, heading, speed, target_lane_index,
+                         target_speed, target_speeds, route)
+        self.lanes_changed_count = 0
+
+    def act(self, action: Union[dict, str] = None) -> None:
+        if action == "LANE_RIGHT" or action == "LANE_LEFT":
+            self.lanes_changed_count += 1
+        return super().act(action)

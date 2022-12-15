@@ -76,7 +76,8 @@ def convert_int_to_array(int):
 #       vehicles_count = 10
 #
 def experiment(start_seed, end_seed, config, state_record, 
-               vehicles_count_record, environment_config):
+               ego_collisions_record, vehicles_count_record, 
+               environment_config, lane_changes_record, avg_velocity):
     # Create and configure gym environment.
     env = gym.make("highway-lidar-v0")
     # env = RecordVideo(env, "videos")
@@ -84,10 +85,21 @@ def experiment(start_seed, end_seed, config, state_record,
         "adaptive_observations": False,
         "constant_base_lidar": True,
         "base_lidar_frequency": 1.0,
-        "lanes_count": config["experiment"]["lanes_count"],
-        "vehicles_count": config["experiment"]["vehicles_count"],
-        "vehicles_density": config["experiment"]["vehicles_density"],
-        "duration": config["experiment"]["duration"]
+        **{k: config["experiment"][k] for k in config["experiment"].keys()},
+        # "lanes_count": config["experiment"]["lanes_count"],
+        # "vehicles_count": config["experiment"]["vehicles_count"],
+        # "vehicles_density": config["experiment"]["vehicles_density"],
+        # "duration": config["experiment"]["duration"],
+        # "vehicle_speeds": config["experiment"]["vehicle_speeds"],
+        # "road_length": config["experiment"]["road_length"],
+        # "duration": config["experiment"]["duration"],
+        #     "vehicle_type_distribution": {
+        #         "sedan": 0.4,
+        #         "truck": 0.5,
+        #         "semi": 0.1,
+        #     },
+        #     "render": True,
+        #     "high_speed_reward": 0.5,
     })
     environment_config.update(env.config)
 
@@ -107,6 +119,7 @@ def experiment(start_seed, end_seed, config, state_record,
         obs = env.reset(seed=seed)
         states_list = []
         vehicles_counts_list = []
+        avg_velocities = []
         while not truncated and not terminated:
             action = agent.act(obs)
             obs, reward, terminated, truncated, info = env.step(action)
@@ -120,10 +133,16 @@ def experiment(start_seed, end_seed, config, state_record,
             #   * time-invariant
             states_list.append(obs_state)
             vehicles_counts_list.append(len(env.road.vehicles))
+            avg_velocities.append(np.mean(
+                [v.speed for v in env.road.vehicles]))
             if config["experiment"]["render"]:
                 env.render()
         state_record[seed] = states_list
         vehicles_count_record[seed] = vehicles_counts_list
+        lane_changes_record[seed] = sum(
+            [v.lanes_changed_count for v in env.road.vehicles])
+        ego_collisions_record[seed] = env.vehicle.crashed
+        avg_velocity[seed] = np.mean(avg_velocities)
     env.close()
 
 # Enable JSON serialization.
@@ -161,7 +180,7 @@ if __name__ == "__main__":
 
     # Define data collection configuration.
     first_seed = 1_000
-    last_seed = 1_100
+    last_seed = 1_022
     config = {
         "experiment": {
             "first_seed": first_seed,
@@ -177,8 +196,11 @@ if __name__ == "__main__":
                 "semi": 0.1,
             },
             "render": True,
-            "vehicle_speeds": np.linspace(10, 35, 3, endpoint=True),
-            "high_speed_reward": 0.5,
+            "vehicle_speeds": np.linspace(5, 35, 5, endpoint=True),
+            # With too low of a high_speed_reward, the agent will stop for a
+            # few steps collect maximum rewards and move on. This will cause
+            # lots of traffic and collisions.
+            "high_speed_reward": 1.0,
         },
         "agent": {
             "budget": 50,
@@ -191,25 +213,31 @@ if __name__ == "__main__":
     step = int((new_last_seed - first_seed) / num_processes)
 
     # Get ranges for each process.
-    start_seeds = np.arange(first_seed, last_seed - step, step)
-    end_seeds = np.arange(first_seed + step, last_seed, step)
+    start_seeds = np.arange(first_seed, new_last_seed, step)
+    end_seeds = np.arange(first_seed + step, new_last_seed + step, step)
     assert len(start_seeds) == len(end_seeds) == num_processes
     raw_data = {
         "state_record": {}, "vehicles_count_record": {},
-        "collisions_count": {}, "time_till_1st_collision": {},
+        "collisions_count": {}, "steps_till_1st_collision": {},
         "ego_vehicle_collision": {}, "environment_config": {},
+        "lane_changes_record": {}, "ego_collisions_record": {},
+        "average_velocity": {},
     }
     with multiprocessing.Manager() as manager:
         # Create shared dictionary.
         state_record = manager.dict()
         vehicles_count_record = manager.dict()
         environment_config = manager.dict()
+        lane_changes_record = manager.dict()
+        ego_collisions_record = manager.dict()
+        avg_velocity = manager.dict()
         # Create processes.
         processes = [
             multiprocessing.Process(
                 target=experiment,
-                args=(start, end, config, state_record, vehicles_count_record,
-                      environment_config))
+                args=(start, end, config, state_record, ego_collisions_record, 
+                      vehicles_count_record, environment_config, 
+                      lane_changes_record, avg_velocity))
             for start, end in zip(start_seeds, end_seeds)]
         # Start all processes.
         for process in processes:
@@ -217,10 +245,14 @@ if __name__ == "__main__":
         # Wait for all processes to complete.
         for process in processes:
             process.join()
-        print(state_record)
+
+        # Store data from all processes.
         raw_data["state_record"].update(state_record)
         raw_data["vehicles_count_record"].update(vehicles_count_record)
         raw_data["environment_config"].update(environment_config)
+        raw_data["lane_changes_record"].update(lane_changes_record)
+        raw_data["ego_collisions_record"].update(ego_collisions_record)
+        raw_data["average_velocity"].update(avg_velocity)
     # Extract experimental data from the record.
     for seed, vehicles_count_record in raw_data['vehicles_count_record'].items():
         vehicles, counts = np.unique(vehicles_count_record, return_counts=True)
@@ -228,8 +260,8 @@ if __name__ == "__main__":
         print(f"{seed}: {max(vehicles) - min(vehicles)} collisions")
         print(f"{seed}: {counts[i_max]}s until collision")
         raw_data["collisions_count"][seed] = max(vehicles) - min(vehicles)
-        raw_data["time_till_1st_collision"][seed] = counts[i_max]
-        raw_data["ego_vehicle_collision"][seed] = counts[i_max] != config["experiment"]["duration"]
+        raw_data["steps_till_1st_collision"][seed] = counts[i_max]
+        # raw_data["ego_vehicle_collision"][seed] = counts[i_max] != config["experiment"]["duration"]
     # Build discrete_markov_chain for quick use in analysis.
     mc = discrete_markov_chain(
         raw_data=raw_data["state_record"], num_states=2**16)
@@ -241,7 +273,7 @@ if __name__ == "__main__":
     num_collisions, collision_freq = np.unique(
         list(raw_data["collisions_count"].values()), return_counts=True)
     time_till_collisions, time_till_freq = np.unique(
-        list(raw_data["time_till_1st_collision"].values()), return_counts=True)
+        list(raw_data["steps_till_1st_collision"].values()), return_counts=True)
     ego_vehicle_collisions = sum(raw_data["ego_vehicle_collision"].values())
     print(raw_data["environment_config"])
     config["environment"] = {**raw_data["environment_config"]}
@@ -251,6 +283,8 @@ if __name__ == "__main__":
             "time_till_collisions": time_till_collisions,
             "time_till_freq": time_till_freq,
             "ego_vehicle_collisions": ego_vehicle_collisions,
+            "lane_changes": sum(raw_data["lane_changes_record"].values()),
+            "average_velocity": np.mean(list(raw_data["average_velocity"].values())),
     }
     with open(config_file, "w") as f:
         f.write(json.dumps(config, sort_keys=True, indent=4, cls=NpEncoder))

@@ -9,6 +9,7 @@ from rl_agents.trainer.evaluation import Evaluation
 
 from logging import log
 import logging
+import json
 import gym  # 0.26.2
 from gym.wrappers import RecordVideo, RecordEpisodeStatistics
 import os
@@ -151,16 +152,15 @@ throughout the day, the AVs select alternate routes. The question becomes how
 to model the localized traffic in a way that closely couples the danger to the
 AV? Why not a radial occupancy grid? What about a cartesian occupancy grid?
 """
-env.configure({
-    "adaptive_observations": False,
-    "constant_base_lidar": True,
-    "base_lidar_frequency": 1.0,
-    "vehicles_count": 8,
-    "vehicles_density": 1/.3, # 1/.3 is upper limit.
-    "road_length": 150,
-    "high_speed_reward": 0.5,
-})
-seed = 1_001
+experiments_dir = op.join(local_highway_env, "scripts", "sensor_scheduling_experiments")
+with open(op.join(experiments_dir, "experiment_63", "configuration.json")) as json_file:
+    config = json.load(json_file)
+env.configure(config["environment"])
+seed = 1_495
+# TODO: In this simulation a car changes lanes into a semi. We need to reduce
+# the frequency of these types of collisions. Troubleshoot why mobil
+# recommended a lane change. Maybe add a distance check (modifies MOBIL)
+# TODO: Figure out how to set semi velocity to lower velocity.
 
 # Make agent
 agent_config = {
@@ -177,9 +177,14 @@ action_dict = env.action_type.ACTIONS_ALL
 terminated, truncated = False, False
 obs = env.reset(seed=seed)
 lidar_count = 0
+env.render()
 while not truncated and not terminated:
     action = agent.act(obs)
     obs, reward, terminated, truncated, info = env.step(action)
+    print(action_dict[action])
+    print(reward)
+    print(env.find_closest_obstacle())
+    print(env.vehicle.target_speed)
     env.render()
 env.close()
 # env.close_video_recorder()

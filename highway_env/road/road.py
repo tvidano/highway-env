@@ -346,8 +346,10 @@ class Road(object):
         :param lane_index: the lane on which to look for preceding and following vehicles.
                      It doesn't have to be the current vehicle lane but can also be another lane, in which case the
                      vehicle is projected on it considering its local coordinates in the lane.
-        :return: the closest vehicle in front and behind of the vehicle. Cannot be the
-                 same vehicle, and either can be None.
+        :return: the preceding and following vehicle. These can be the same
+            vehicle if there is only 1 other vehicle in the lane, otherwise
+            they should be different. Both can be None if |vehicle| is the only
+            vehicle in the lane.
         """
         lane_index = lane_index or vehicle.lane_index
         if not lane_index:
@@ -356,30 +358,40 @@ class Road(object):
         s = self.network.get_lane(lane_index).local_coordinates(vehicle.position)[0]
         front_dist = rear_dist = None
         v_front = v_rear = None
+        viable_v = []
         for v in self.vehicles + self.objects:
             if v is not vehicle and not isinstance(v, Landmark) \
                     and not isinstance(v, MirroredObject):  # self.network.is_connected_road(v.lane_index,
                 # lane_index, same_lane=True):
                 # Skip vehicles not on the lane.
                 s_v, lat_v = lane.local_coordinates(v.position)
-                if not lane.on_lane(v.position, s_v, lat_v, margin=1):
+                # Changed margin to 0.5 to be more robust to vehicles being not
+                # exactly in the middle of the lane.
+                if not lane.on_lane(v.position, s_v, lat_v, margin=0.5):
                     continue
+                viable_v.append(v)
                 # Use lane_distance_to instead of local_coordinates.
-                # TODO: Currently this lane_distance_to means that the max
-                # forward distance is 1/2 * lane_length.
-                v_dist = vehicle.lane_distance_to(v, lane)
-                if v_dist >= 0 and (front_dist is None or v_dist < front_dist):
+                v_dist, v_cycle_dist = vehicle.lane_distance_to(v, lane, 
+                    return_both=True)
+                if front_dist is None or \
+                        max(v_dist, v_cycle_dist) < front_dist:
                     v_front = v
-                    front_dist = v_dist
-                elif v_dist < 0 and (rear_dist is None or v_dist > rear_dist):
+                    front_dist = max(v_dist, v_cycle_dist)
+                if rear_dist is None or \
+                        min(v_dist, v_cycle_dist) > rear_dist:
                     v_rear = v
-                    rear_dist = v_dist
+                    rear_dist = min(v_dist, v_cycle_dist)
                 # if s <= s_v and (s_front is None or s_v <= s_front):
                 #     s_front = s_v
                 #     v_front = v
                 # if s_v < s and (s_rear is None or s_v > s_rear):
                 #     s_rear = s_v
                 #     v_rear = v
+        # Neighbor vehicles can only be the same vehicle if there is only 1
+        # vehicle in the lane.
+        assert (v_front is not None and v_rear is not None) or len(viable_v) == 0
+        if v_front is not None and v_rear is not None:
+            assert v_front is not v_rear or len(viable_v) == 1
         return v_front, v_rear
 
     def __repr__(self):

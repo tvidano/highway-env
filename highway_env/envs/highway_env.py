@@ -308,7 +308,9 @@ class HighwayEnvLidar(HighwayEnv):
             vehicle.position[0] = 0.
             vehicle = self.action_type.vehicle_class(
                 self.road, vehicle.position, vehicle.heading, vehicle.speed)
-            vehicle.target_speeds = self.config["vehicle_speeds"]
+            vehicle.target_speeds = self.config["vehicle_speeds"] \
+                if isinstance(self.config["vehicle_speeds"], np.ndarray) \
+                else np.array(self.config["vehicle_speeds"])
             self.controlled_vehicles.append(vehicle)
             self.road.vehicles.append(vehicle)
 
@@ -321,83 +323,11 @@ class HighwayEnvLidar(HighwayEnv):
                        self.config["vehicle_type_distribution"]["sedan"]])[0]
                 vehicle = other_vehicle_type.create_random(
                     self.road, spacing=1 / self.config["vehicles_density"])
-                vehicle.target_speeds = self.config["vehicle_speeds"]
-                vehicle.randomize_behavior()
+                vehicle.target_speeds = self.config["vehicle_speeds"] \
+                    if isinstance(self.config["vehicle_speeds"], np.ndarray) \
+                    else np.array(self.config["vehicle_speeds"])
+                # vehicle.randomize_behavior()
                 self.road.vehicles.append(vehicle)
-
-    # def _change_vehicle_type(self, vehicle: Vehicle, type: str) -> None:
-    #     """Changes the vehicle to a specific type of vehicle."""
-    #     f150_width, f150_length = 2.2, 6.0
-    #     # 
-    #     big_rig_width, big_rig_length = 2.4, 18.0
-    #     if type == "truck":
-    #         vehicle.LENGTH = f150_length
-    #         vehicle.WIDTH = f150_width
-    #         vehicle.front_mirrored_vehicle.LENGTH = f150_length
-    #         vehicle.front_mirrored_vehicle.WIDTH = f150_width
-    #         vehicle.rear_mirrored_vehicle.LENGTH = f150_length
-    #         vehicle.rear_mirrored_vehicle.WIDTH = f150_width
-    #         vehicle.diagonal = np.sqrt(f150_width**2 + f150_length**2)
-    #     elif type == "semi":
-    #         vehicle.LENGTH = big_rig_length
-    #         vehicle.WIDTH = big_rig_width
-    #         vehicle.front_mirrored_vehicle.LENGTH = big_rig_length
-    #         vehicle.front_mirrored_vehicle.WIDTH = big_rig_width
-    #         vehicle.rear_mirrored_vehicle.LENGTH = big_rig_length
-    #         vehicle.rear_mirrored_vehicle.WIDTH = big_rig_width
-    #         vehicle.diagonal = np.sqrt(
-    #             big_rig_length**2 + big_rig_width**2)
-    #         vehicle.TIME_WANTED = 3.2 # s
-    #         vehicle.DISTANCE_WANTED = vehicle.LENGTH + 5.0 # m
-    #         vehicle.enable_lane_change = False
-
-    # def _distribute_vehicle_types(self):
-    #     """
-    #     Change vehicles distributed throughout the highway according to the
-    #     config parameter vehicle type distribution.
-    #     """
-    #     vehicle_types = self.config["vehicle_type_distribution"]
-    #     assert sum(vehicle_types.values()) == 1.0, \
-    #         "the distribution of vehicle types must total 1.0."
-    #     vehicles = self.road.vehicles[1:]
-    #     vehicle_index = np.arange(len(vehicles))
-    #     self.np_random.shuffle(vehicle_index)
-    #     num_sedans = round(vehicle_types["sedan"] * len(vehicles))
-    #     num_trucks = round(vehicle_types["truck"] * len(vehicles))
-    #     truck_indices = vehicle_index[num_sedans:num_sedans + num_trucks]
-    #     semi_indices = vehicle_index[num_sedans + num_trucks:]
-    #     for i in truck_indices:
-    #         self._change_vehicle_type(vehicles[i], "truck")
-    #     # List semi_indices by vehicle location in decreasing x position.
-    #     sorted_semi_indices = sorted(
-    #         semi_indices, key=lambda i: vehicles[i].position[0], reverse=True)
-    #     # Create semi trucks by modifying existing vehicles.
-    #     for i in sorted_semi_indices:
-    #         # Change vehicle parameters and goals to model a semi truck.
-    #         self._change_vehicle_type(vehicles[i], "semi")
-    #         # Move semi trucks so they are 2 other car lengths away from other
-    #         # vehicles so not initialized in a collision.
-    #         front_vehicle, rear_vehicle = vehicles[i].road.neighbour_vehicles(
-    #             vehicles[i], vehicles[i].lane_index)
-    #         # # If semi is initialized too close to the vehicle in front, move
-    #         # # all vehicles in that lane behind the front vehicle back.
-    #         # safe_distance = vehicles[i].LENGTH / 2. + self.vehicle.LENGTH *
-    #         # 2.5
-    #         safe_distance = vehicles[i].desired_gap(vehicles[i], front_vehicle)
-    #         if front_vehicle and \
-    #                 front_vehicle.position[0] - vehicles[i].position[0] <= \
-    #                 safe_distance:
-    #                 # front_vehicle.LENGTH / 2. + vehicles[i].LENGTH / 2. + \
-    #                 # self.vehicle.LENGTH * 2.:
-    #             self._shift_all_vehicles_behind(front_vehicle, safe_distance)
-
-    #         # # If semi is initialized too close to the vehicle in rear, move all
-    #         # # vehicles in that lane behind the semi back.
-    #         # if rear_vehicle and \
-    #         #         vehicles[i].position[0] - rear_vehicle.position[0] <= \
-    #         #         vehicles[i].LENGTH / 2. + rear_vehicle.LENGTH / 2. + \
-    #         #         self.vehicle.LENGTH * 2.:
-    #         #     self._shift_all_vehicles_behind(vehicles[i], safe_distance)
 
     def _shift_all_vehicles_behind(self, vehicle, distance):
         """Move all vehicles behind |vehicle| in the same lane back |distance|."""
@@ -490,16 +420,35 @@ class HighwayEnvLidar(HighwayEnv):
         # 2. isolate the lidar points in front and behind the ego vehicle.
         # 3. find the closest lidar point.
         # 4. get the distance to that point.
-        lidar_points = self.lidar_buffer[:, [x_position, y_position]]
-        distances = np.linalg.norm(lidar_points - ego_position, axis=1)
-        points_in_buffer = np.logical_and(
-            lidar_points[:, 1] - lane_buffer < ego_position[1],
-            ego_position[1] < lidar_points[:, 1] + lane_buffer)
+        # lidar_points = self.lidar_buffer[:, [x_position, y_position]]
+        # distances = np.linalg.norm(lidar_points - ego_position, axis=1)
+        distances = self.lidar_buffer[:, self.observation_type.DISTANCE]
+        front_i = self.observation_type.angle_to_index(0)
+        rear_i = self.observation_type.angle_to_index(np.pi)
+        # points_in_buffer = np.logical_and(
+        #     lidar_points[:, 1] - lane_buffer < ego_position[1],
+        #     ego_position[1] < lidar_points[:, 1] + lane_buffer)
         try:
-            closest_distance = np.min(distances[points_in_buffer])
+            # closest_distance = np.min(distances[points_in_buffer])
+            closest_distance = np.min(distances[[front_i, rear_i]])
         except ValueError:
+            print('ValueError')
             closest_distance = np.inf
 
+        # At collisions, sometimes the lidar points can go past the collided 
+        # vehicle. Catch this by overwriting.
+        if self.vehicle.crashed:
+            closest_distance = 0
+        # front_v, back_v = self.road.neighbour_vehicles(self.vehicle, 
+        #     self.vehicle.lane_index)
+        # if front_v is not None and \
+        #         abs(self.vehicle.lane_distance_to(front_v)) < \
+        #         self.vehicle.LENGTH / 2 + front_v.LENGTH / 2:
+        #     closest_distance = self.vehicle.lane_distance_to(front_v)
+        # if back_v is not None and \
+        #         abs(self.vehicle.lane_distance_to(back_v)) < \
+        #         self.vehicle.LENGTH / 2 + back_v.LENGTH / 2:
+        #     closest_distance = self.vehicle.lane_distance_to(back_v)
         # closest_lidar = np.array([np.inf, np.inf])
         # closest_distance = np.linalg.norm(ego_position - closest_lidar)
         # for lidar_point in self.lidar_buffer[:, [x_position, y_position]]:

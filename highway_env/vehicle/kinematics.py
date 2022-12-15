@@ -257,6 +257,9 @@ class CyclicVehicle(Vehicle):
     """A kinematic vehicle that when past the road edge, will restart at the
     road origin."""
 
+    SPEED_GAINS = [0.9, 1.0]
+    """Range of speed limit scaling when creating random vehicle."""
+
     def __init__(self,
                  road: Road,
                  position: Vector,
@@ -298,7 +301,7 @@ class CyclicVehicle(Vehicle):
 
     # Override RoadObject's lane_distance_to
     def lane_distance_to(self, other: 'CyclicVehicle',
-            lane: 'AbstractLane' = None) -> float:
+            lane: 'AbstractLane' = None, return_both: bool=False) -> float:
         """
         Compute the signed distance to another object along lane as per the
         cyclic road type. Assuming linear road.
@@ -318,9 +321,12 @@ class CyclicVehicle(Vehicle):
             cycle_distance = distance - self.road_edge
         else:
             cycle_distance = self.road_edge + distance
+        if return_both:
+            return distance, cycle_distance
         # Return the distance with the smallest magnitude.
-        return distance if abs(distance) < abs(cycle_distance) \
-            else cycle_distance
+        else:
+            return distance if abs(distance) < abs(cycle_distance) \
+                else cycle_distance
 
         # front_most_vehicle, rear_most_vehicle = \
         #     self._get_edge_vehicles(self.lane_index)
@@ -400,14 +406,14 @@ class CyclicVehicle(Vehicle):
                       lane_from: Optional[str] = None,
                       lane_to: Optional[str] = None,
                       lane_id: Optional[int] = None,
-                      spacing: float = 1,
-                      add_backwards: bool = False) \
+                      spacing: float = 1) \
             -> "Vehicle":
         """
         Create a random vehicle on the road.
 
-        The lane and /or speed are chosen randomly, while longitudinal position is chosen behind the last
-        vehicle in the road with density based on the number of lanes.
+        The lane and /or speed are chosen randomly, while longitudinal position
+        is chosen behind the last vehicle in the road with density based on the
+        number of lanes.
 
         :param road: the road where the vehicle is driving
         :param speed: initial speed in [m/s]. If None, will be chosen randomly
@@ -427,16 +433,18 @@ class CyclicVehicle(Vehicle):
         if speed is None:
             if lane.speed_limit is not None:
                 speed = road.np_random.uniform(
-                    0.9*lane.speed_limit, 1.0*lane.speed_limit)
+                    cls.SPEED_GAINS[0]*lane.speed_limit, 
+                    cls.SPEED_GAINS[1]*lane.speed_limit)
             else:
                 speed = road.np_random.uniform(
                     Vehicle.DEFAULT_INITIAL_SPEEDS[0],
                     Vehicle.DEFAULT_INITIAL_SPEEDS[1])
         # Consider spacing argument as the number of seconds of travel between
-        # ego vehicle and forward car.
-        offset = spacing * speed
+        # front edge of ego vehicle and rear edge of forward car.
+        offset = spacing * speed + cls.LENGTH / 2
         in_lane_x0 = [v.position[0] + v.LENGTH / 2 for v in road.vehicles \
             if v.lane_index[2] == _id]
+        # Position of the front edge of the forward most vehicle.
         x0 = np.max(in_lane_x0) if len(in_lane_x0) > 0 else 0
         x0 += offset * road.np_random.uniform(0.9, 1.0)
         v = cls(road, lane.position(x0, 0), lane.heading_at(x0), speed)
