@@ -1,0 +1,182 @@
+{
+    "agent": {
+        "budget": 50,
+        "gamma": 0.9
+    },
+    "environment": {
+        "action": {
+            "type": "DiscreteMetaActionCyclic"
+        },
+        "adaptive_observations": false,
+        "base_lidar_frequency": 1.0,
+        "centering_position": [
+            0.5,
+            0.5
+        ],
+        "collision_reward": -1,
+        "constant_base_lidar": true,
+        "controlled_vehicles": 1,
+        "distance_threshold": 20,
+        "duration": 30,
+        "ego_spacing": 2,
+        "first_seed": 1000,
+        "high_speed_reward": 1.0,
+        "initial_ego_speed": 30,
+        "initial_lane_id": null,
+        "lane_change_reward": 0,
+        "lanes_count": 3,
+        "last_seed": 11000,
+        "manual_control": false,
+        "normalize_reward": true,
+        "observation": {
+            "type": "AdaptiveLidarObservation"
+        },
+        "obstacle_distance_reward": -10,
+        "offroad_terminal": false,
+        "offscreen_rendering": false,
+        "other_vehicles_type": {
+            "sedan": "highway_env.vehicle.behavior.CyclicIDMVehicle",
+            "semi": "highway_env.vehicle.behavior.SemiVehicle",
+            "truck": "highway_env.vehicle.behavior.TruckVehicle"
+        },
+        "policy_frequency": 1,
+        "reaction_distance": 15,
+        "reaction_velocity": 7.5,
+        "real_time_rendering": false,
+        "render": false,
+        "render_agent": true,
+        "reward_speed_range": [
+            20,
+            35
+        ],
+        "right_lane_reward": 1.0,
+        "road_length": 150,
+        "road_speed_limit": 33,
+        "scaling": 5.5,
+        "screen_height": 150,
+        "screen_width": 1000,
+        "show_trajectories": false,
+        "simulation_frequency": 5,
+        "smooth_driving_reward": 1.0,
+        "vehicle_speeds": [
+            5.0,
+            12.5,
+            20.0,
+            27.5,
+            35.0
+        ],
+        "vehicle_type_distribution": {
+            "sedan": 0.4,
+            "semi": 0.1,
+            "truck": 0.5
+        },
+        "vehicles_count": 12,
+        "vehicles_density": 2.5
+    },
+    "experiment": {
+        "duration": 30,
+        "first_seed": 1000,
+        "high_speed_reward": 1.0,
+        "lanes_count": 3,
+        "last_seed": 11000,
+        "render": false,
+        "road_length": 150,
+        "vehicle_speeds": [
+            5.0,
+            12.5,
+            20.0,
+            27.5,
+            35.0
+        ],
+        "vehicle_type_distribution": {
+            "sedan": 0.4,
+            "semi": 0.1,
+            "truck": 0.5
+        },
+        "vehicles_count": 12,
+        "vehicles_density": 2.5
+    },
+    "results": {
+        "average_velocity": 16.70947885552009,
+        "collision_freq": [
+            9656,
+            20,
+            310,
+            8,
+            6
+        ],
+        "ego_vehicle_collisions": 0,
+        "lane_changes": 49769,
+        "num_collisions": [
+            0,
+            1,
+            2,
+            3,
+            4
+        ],
+        "time_till_collisions": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30
+        ],
+        "time_till_freq": [
+            89,
+            22,
+            16,
+            24,
+            16,
+            5,
+            2,
+            6,
+            6,
+            8,
+            6,
+            6,
+            6,
+            18,
+            14,
+            7,
+            4,
+            5,
+            6,
+            10,
+            9,
+            8,
+            9,
+            10,
+            3,
+            14,
+            7,
+            6,
+            9,
+            9649
+        ]
+    }
+}
