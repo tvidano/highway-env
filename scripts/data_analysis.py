@@ -5,6 +5,7 @@ import numpy as np
 import os.path as op
 from scipy import sparse
 import sys
+import json
 
 # use local version of highway_env, before simulation you should be told this
 # is a local version.
@@ -86,44 +87,51 @@ def compute_num_collisions(raw_data: dict) -> int:
         print(counts[0])
     return num_collisions
 
-mc1 = discrete_markov_chain(num_states=2**16, raw_data={1000: []})
-mc1.load_object("2_lane_low_density_low_cars_1000_4999")
-mc2 = discrete_markov_chain(num_states=2**16, raw_data={5000: []})
-mc2.load_object("2_lane_low_density_low_cars_5000_10999")
-raw_data = (mc1 + mc2).raw_data
-mc_2_lane = discrete_markov_chain(num_states=2**16, raw_data=raw_data)
-mc_2_lane_low = discrete_markov_chain(num_states=2**16, raw_data={1000: []})
-mc_2_lane_low.load_object("2_lane_low_density_1000_10998")
-mc_4_lane = discrete_markov_chain(num_states=2**16, raw_data={1000: []})
-mc_4_lane.load_object("4_lane_low_density_low_cars_1000_10999")
+experiments_dir = op.join(local_highway_env, "scripts", 
+                          "sensor_scheduling_experiments")
+path = op.join(experiments_dir, "experiment_009", "raw_data.json")
+with open(path, "r") as f:
+    exp = json.load(f)
+    print(sum(exp["ego_collisions_record"].values()))
 
-print("Comparing 2 lane highway experiment.")
-compare_across_seeds(mc_2_lane.raw_data, 1000)
+# mc1 = discrete_markov_chain(num_states=2**16, raw_data={1000: []})
+# mc1.load_object("2_lane_low_density_low_cars_1000_4999")
+# mc2 = discrete_markov_chain(num_states=2**16, raw_data={5000: []})
+# mc2.load_object("2_lane_low_density_low_cars_5000_10999")
+# raw_data = (mc1 + mc2).raw_data
+# mc_2_lane = discrete_markov_chain(num_states=2**16, raw_data=raw_data)
+# mc_2_lane_low = discrete_markov_chain(num_states=2**16, raw_data={1000: []})
+# mc_2_lane_low.load_object("2_lane_low_density_1000_10998")
+# mc_4_lane = discrete_markov_chain(num_states=2**16, raw_data={1000: []})
+# mc_4_lane.load_object("4_lane_low_density_low_cars_1000_10999")
 
-print("Comparing 4 lane highway experiment")
-compare_across_seeds(mc_4_lane.raw_data, 1000)
+# print("Comparing 2 lane highway experiment.")
+# compare_across_seeds(mc_2_lane.raw_data, 1000)
 
-print(mc_2_lane.compare(mc_4_lane))
-print(mc_4_lane.compare(mc_2_lane))
+# print("Comparing 4 lane highway experiment")
+# compare_across_seeds(mc_4_lane.raw_data, 1000)
 
-print(len(set(mc_2_lane.transition_matrix.todok().nonzero()[0])))
-mc_2_T, mc_2_map = mc_2_lane.get_irreducible_matrix()
-print(f"2 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_2_T)}")
-mc_2_irreducible = discrete_markov_chain(transition_matrix=mc_2_T)
-print(f"2 lane irreducible? {mc_2_irreducible.is_irreducible()}")
-print(f"2 lane entropy rate: {mc_2_irreducible.entropy_rate()}")
-print(f"Num of collisions: {compute_num_collisions(raw_data)}")
+# print(mc_2_lane.compare(mc_4_lane))
+# print(mc_4_lane.compare(mc_2_lane))
 
-mc_2_low_T, mc_2_low_map = mc_2_lane_low.get_irreducible_matrix()
-print(f"2 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_2_low_T)}")
-mc_2_low_irreducible = discrete_markov_chain(transition_matrix=mc_2_low_T)
-print(f"2 lane irreducible? {mc_2_low_irreducible.is_irreducible()}")
-print(f"2 lane entropy rate: {mc_2_low_irreducible.entropy_rate()}")
-print(f"Num of collisions: {compute_num_collisions(mc_2_lane_low.raw_data)}")
+# print(len(set(mc_2_lane.transition_matrix.todok().nonzero()[0])))
+# mc_2_T, mc_2_map = mc_2_lane.get_irreducible_matrix()
+# print(f"2 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_2_T)}")
+# mc_2_irreducible = discrete_markov_chain(transition_matrix=mc_2_T)
+# print(f"2 lane irreducible? {mc_2_irreducible.is_irreducible()}")
+# print(f"2 lane entropy rate: {mc_2_irreducible.entropy_rate()}")
+# print(f"Num of collisions: {compute_num_collisions(raw_data)}")
 
-mc_4_T, mc_4_map = mc_4_lane.get_irreducible_matrix()
-print(f"4 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_4_T)}")
-mc_4_irreducible = discrete_markov_chain(transition_matrix=mc_4_T)
-print(f"4 lane irreducible? {mc_4_irreducible.is_irreducible()}")
-print(f"4 lane entropy rate: {mc_4_irreducible.entropy_rate()}")
-print(f"Num of collisions: {compute_num_collisions(mc_4_lane.raw_data)}")
+# mc_2_low_T, mc_2_low_map = mc_2_lane_low.get_irreducible_matrix()
+# print(f"2 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_2_low_T)}")
+# mc_2_low_irreducible = discrete_markov_chain(transition_matrix=mc_2_low_T)
+# print(f"2 lane irreducible? {mc_2_low_irreducible.is_irreducible()}")
+# print(f"2 lane entropy rate: {mc_2_low_irreducible.entropy_rate()}")
+# print(f"Num of collisions: {compute_num_collisions(mc_2_lane_low.raw_data)}")
+
+# mc_4_T, mc_4_map = mc_4_lane.get_irreducible_matrix()
+# print(f"4 lane (absorbing, diagonality, RGA, mu_I)={analyze_matrix(mc_4_T)}")
+# mc_4_irreducible = discrete_markov_chain(transition_matrix=mc_4_T)
+# print(f"4 lane irreducible? {mc_4_irreducible.is_irreducible()}")
+# print(f"4 lane entropy rate: {mc_4_irreducible.entropy_rate()}")
+# print(f"Num of collisions: {compute_num_collisions(mc_4_lane.raw_data)}")

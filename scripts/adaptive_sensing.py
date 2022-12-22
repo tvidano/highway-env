@@ -153,10 +153,10 @@ to model the localized traffic in a way that closely couples the danger to the
 AV? Why not a radial occupancy grid? What about a cartesian occupancy grid?
 """
 experiments_dir = op.join(local_highway_env, "scripts", "sensor_scheduling_experiments")
-with open(op.join(experiments_dir, "experiment_63", "configuration.json")) as json_file:
+with open(op.join(experiments_dir, "experiment_3", "configuration.json")) as json_file:
     config = json.load(json_file)
 env.configure(config["environment"])
-seed = 1_495
+seed = 1_001
 # TODO: In this simulation a car changes lanes into a semi. We need to reduce
 # the frequency of these types of collisions. Troubleshoot why mobil
 # recommended a lane change. Maybe add a distance check (modifies MOBIL)
